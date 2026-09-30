@@ -101,7 +101,8 @@ function frameTarget() {
     const c = [0, 1, 2].map((k) => (walk.min[k] + walk.max[k]) / 2);
     const r = Math.hypot(...[0, 1, 2].map((k) => walk.max[k] - walk.min[k])) / 2 + 4;
     // fit the bounding sphere in the smaller screen dimension
-    const focal = space.magnifier * 1.25, aspect = canv.width / Math.max(1, canv.height);
+    // (a hidden tab can report a 0x0 canvas; assume square until it has a real size)
+    const focal = space.magnifier * 1.25, aspect = canv.width > 0 && canv.height > 0 ? canv.width / canv.height : 1;
     return { c, Rc: Math.max(12, (r * focal) / Math.min(1, aspect) * 1.15) };
 }
 
@@ -119,6 +120,7 @@ function updateCamera(dt) {
     space.Y0 += (view.target[1] - space.Y0) * k;
     space.Z0 += (view.target[2] - space.Z0) * k;
     space.Rc += (view.Rc - space.Rc) * k;
+    if (!Number.isFinite(space.Rc)) space.Rc = view.Rc; // never let one bad frame poison the easing
     space.Xc = space.X0 + Math.cos(space.beta) * Math.cos(space.alpha) * space.Rc;
     space.Yc = space.Y0 + Math.cos(space.beta) * Math.sin(space.alpha) * space.Rc;
     space.Zc = space.Z0 + Math.sin(space.beta) * space.Rc;
@@ -207,6 +209,8 @@ document.addEventListener("keydown", (e) => {
         case "KeyK": shift(space.zUnitVec, -STEP); break;   // back
         case "KeyV": zoom(1.1); break;
         case "KeyC": zoom(1 / 1.1); break;
+        case "Equal": case "NumpadAdd": space.magnifier += 0.1; break;                                   // magnify in
+        case "Minus": case "NumpadSubtract": space.magnifier = Math.max(0.2, space.magnifier - 0.1); break; // magnify out
     }
 });
 growBtn.addEventListener("click", () => setAutoGrow(!autoGrow));
