@@ -52,6 +52,8 @@ uniform vec3 uFog;
 uniform vec2 uFogRange;
 uniform vec4 uSun;               // x, z, radius, unused
 uniform vec3 uGridColor;
+uniform vec3 uSunA;              // sun colour at the bottom
+uniform vec3 uSunB;              // sun colour at the top
 
 float gridLine(float coord, float spacing, float width) {
     float d = abs(fract(coord / spacing + 0.5) - 0.5) * spacing;
@@ -71,7 +73,7 @@ void main(){
             float band = fract(t * 9.0 - uTime * 0.35);
             if (band < (0.55 - t) * 1.1) discard;
         }
-        c = mix(vec3(1.0, 0.15, 0.55), vec3(1.0, 0.85, 0.3), t);
+        c = mix(uSunA, uSunB, t);
         gl_FragColor = vec4(c, 0.9);
         return;
     }
@@ -109,6 +111,7 @@ uniform float uAberr;
 uniform float uFlash;
 uniform vec3 uFlashColor;
 uniform float uSpeed;
+uniform vec4 uTint;              // rgb + amount: power-up screen tint
 
 float rand(vec2 c){ return fract(sin(dot(c, vec2(12.9898, 78.233))) * 43758.5453); }
 
@@ -135,6 +138,7 @@ void main(){
 
     col *= 1.0 - dot(d, d) * 1.05;                       // vignette
     col *= 0.95 + 0.05 * sin(uv.y * uRes.y * 1.6);        // scanlines
+    col = mix(col, col * uTint.rgb * 1.15, uTint.a);       // power-up grading
     col = mix(col, uFlashColor, uFlash * 0.45);           // hit / pickup flash
     col += (rand(uv + fract(uTime)) - 0.5) * 0.035;       // film grain
     col = col / (1.0 + col * 0.12);                       // soft tone map
@@ -178,11 +182,11 @@ export default class RunnerSpace extends Space {
         this.zAxisLoc = gl.getUniformLocation(prog, "zAxis");
         this.varsLocation = gl.getUniformLocation(prog, "veriables");
         this.u = {};
-        for (const n of ["uTime", "uScroll", "uFog", "uFogRange", "uSun", "uGridColor"]) this.u[n] = gl.getUniformLocation(prog, n);
+        for (const n of ["uTime", "uScroll", "uFog", "uFogRange", "uSun", "uGridColor", "uSunA", "uSunB"]) this.u[n] = gl.getUniformLocation(prog, n);
 
         this.post = link(gl, POST_VERT, POST_FRAG);
         this.pu = { p: gl.getAttribLocation(this.post, "p") };
-        for (const n of ["uTex", "uRes", "uTime", "uAberr", "uFlash", "uFlashColor", "uSpeed"]) this.pu[n] = gl.getUniformLocation(this.post, n);
+        for (const n of ["uTex", "uRes", "uTime", "uAberr", "uFlash", "uFlashColor", "uSpeed", "uTint"]) this.pu[n] = gl.getUniformLocation(this.post, n);
         this.quad = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
@@ -194,6 +198,9 @@ export default class RunnerSpace extends Space {
         this.fogRange = [60, 300];
         this.gridColor = [0.2, 0.9, 1.0];
         this.sun = [0, 60, 110, 0];
+        this.sunA = [1, 0.15, 0.55];
+        this.sunB = [1, 0.85, 0.3];
+        this.tint = [1, 1, 1, 0];
         this.scroll = 0;
         this.time = 0;
         this.fx = { aberr: 0, flash: 0, flashColor: [1, 0.2, 0.35], speed: 0 };
@@ -223,6 +230,16 @@ export default class RunnerSpace extends Space {
     }
 
     // draw the static world (Space.reDraw) + a dynamic stream, then post-process to the screen
+    // world point -> CSS pixels (same maths as the vertex shader); null when behind the camera
+    project(x, y, z) {
+        const v = [x - this.Xc, y - this.Yc, z - this.Zc], dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+        const d = dot(v, this.zUnitVec);
+        if (d < 0.5) return null;
+        const c = this.gl.canvas, focal = this.magnifier * 1.25, aspect = c.clientWidth / Math.max(1, c.clientHeight);
+        const nx = -dot(v, this.xUnitVec) * focal / aspect / d, ny = dot(v, this.yUnitVec) * focal / d;
+        return { x: (nx + 1) / 2 * c.clientWidth, y: (1 - ny) / 2 * c.clientHeight };
+    }
+
     render(dynPos, dynCol) {
         const gl = this.gl;
         this.resizeTargets();
@@ -239,6 +256,8 @@ export default class RunnerSpace extends Space {
         gl.uniform2fv(this.u.uFogRange, this.fogRange);
         gl.uniform4fv(this.u.uSun, this.sun);
         gl.uniform3fv(this.u.uGridColor, this.gridColor);
+        gl.uniform3fv(this.u.uSunA, this.sunA);
+        gl.uniform3fv(this.u.uSunB, this.sunB);
 
         this.reDraw(); // Space: camera basis, uniforms, incremental upload, static world
 
@@ -270,6 +289,7 @@ export default class RunnerSpace extends Space {
         gl.uniform1f(this.pu.uFlash, this.fx.flash);
         gl.uniform3fv(this.pu.uFlashColor, this.fx.flashColor);
         gl.uniform1f(this.pu.uSpeed, this.fx.speed);
+        gl.uniform4fv(this.pu.uTint, this.tint);
         gl.drawArrays(gl.TRIANGLES, 0, 3);
         gl.enable(gl.DEPTH_TEST);
     }

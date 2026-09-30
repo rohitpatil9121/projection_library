@@ -17,7 +17,8 @@
 x/y/z axes itself, and projects every vertex in the vertex shader with dot products. Two demos ship with it:</p>
 <ul>
   <li><b>Prime Walk 3D</b> (<code>index.html</code>): a walk through 3D space that turns every time it reaches a prime number, drawing one cube per step.</li>
-  <li><b>Neon Rush</b> (<code>runner.html</code>): an endless runner game. <code>runner/RunnerSpace.js</code> extends <code>Space</code> with custom GLSL:
+  <li><b>Neon Rush</b> (<code>runner.html</code>): a synthwave runner with <b>5 themed levels + Endless</b>, laser gates and sliding blocks,
+    <b>5 power-ups</b> (Shield, Magnet, Double, Slow-mo, Boost), double jump, near-miss bonuses, stars and unlocks, and a GSAP-animated UI. <code>runner/RunnerSpace.js</code> extends <code>Space</code> with custom GLSL:
     a procedural neon floor grid, a synthwave sun, distance fog and a post-processing pass (bloom, chromatic aberration, vignette,
     scanlines, speed streaks). The track streams in chunks through <code>addElements</code>, and coordinates are rebased as you run so
     float precision holds over long distances.</li>
