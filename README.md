@@ -12,16 +12,11 @@
 <hr>
 
 <h2>🚀 Overview</h2>
-<p><b>🎮 Play <a href="https://rohitpatil9121.github.io/projection_library/runner.html">Neon Rush</a></b>: an endless synthwave runner built on this engine.</p>
+<p><b>🎮 Built with this engine: <a href="https://github.com/rohitpatil9121/neon-rush">Neon Rush</a></b>, a synthwave runner with 5 levels, power-ups and custom GLSL shaders. <a href="https://rohitpatil9121.github.io/neon-rush/">Play it here</a>.</p>
 <p>No three.js, no matrix library. <code>Space.js</code> places a camera on a sphere around a view point, builds the camera's
 x/y/z axes itself, and projects every vertex in the vertex shader with dot products. Two demos ship with it:</p>
 <ul>
   <li><b>Prime Walk 3D</b> (<code>index.html</code>): a walk through 3D space that turns every time it reaches a prime number, drawing one cube per step.</li>
-  <li><b>Neon Rush</b> (<code>runner.html</code>): a synthwave runner with <b>5 themed levels + Endless</b>, laser gates and sliding blocks,
-    <b>5 power-ups</b> (Shield, Magnet, Double, Slow-mo, Boost), double jump, near-miss bonuses, stars and unlocks, and a GSAP-animated UI. <code>runner/RunnerSpace.js</code> extends <code>Space</code> with custom GLSL:
-    a procedural neon floor grid, a synthwave sun, distance fog and a post-processing pass (bloom, chromatic aberration, vignette,
-    scanlines, speed streaks). The track streams in chunks through <code>addElements</code>, and coordinates are rebased as you run so
-    float precision holds over long distances.</li>
   <li><b>OBJ Preview</b> (<code>preview.html</code>): load an <code>.obj</code> (plus <code>.mtl</code> and textures) and inspect it with orbit, pan and zoom.</li>
 </ul>
 
@@ -60,7 +55,6 @@ x/y/z axes itself, and projects every vertex in the vertex shader with dot produ
   <li><code>public/Space.js</code>: the engine (camera, basis, shaders, buffers)</li>
   <li><code>public/Main.js</code>: Prime Walk demo</li>
   <li><code>public/preview.html</code>: OBJ viewer</li>
-  <li><code>public/runner.html</code>, <code>public/runner/</code>: Neon Rush game (<code>RunnerSpace.js</code> shaders, <code>game.js</code> gameplay)</li>
   <li><code>public/Shapes/</code>: <code>Structure</code>, <code>Path</code>, <code>Face</code></li>
 </ul>
 
@@ -69,7 +63,7 @@ x/y/z axes itself, and projects every vertex in the vertex shader with dot produ
 cd projection_library
 npm install
 npm start</pre>
-<p><b>Live demo:</b> <a href="https://rohitpatil9121.github.io/projection_library/">Prime Walk 3D</a> · <a href="https://rohitpatil9121.github.io/projection_library/runner.html">Neon Rush</a> · <a href="https://rohitpatil9121.github.io/projection_library/preview.html">OBJ Preview</a></p>
+<p><b>Live demo:</b> <a href="https://rohitpatil9121.github.io/projection_library/">Prime Walk 3D</a> · <a href="https://rohitpatil9121.github.io/neon-rush/">Neon Rush ↗</a> · <a href="https://rohitpatil9121.github.io/projection_library/preview.html">OBJ Preview</a></p>
 <p>Open <code>http://localhost:9600</code> (or set <code>PORT</code>). The OBJ viewer is at <code>/preview.html</code>.</p>
 
 <hr>
