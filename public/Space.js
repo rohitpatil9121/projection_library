@@ -90,23 +90,16 @@ export default class Space {
             float yProj = a*yAxis.x + b*yAxis.y + c*yAxis.z;
             float zProj = a*zAxis.x + b*zAxis.y + c*zAxis.z;
         
-            float maxWidth = zProj * 0.1 / veriables.y;
-            // float maxWidth = 1.0;
-        
-            // float colMag = (xProj*xProj + yProj*yProj + zProj*zProj)/6400.0;
-            // vcol = vec4(0.0 ,1.0 - colMag , 0.0, 1.0);
-        
-            if(zProj<0.0){
-                maxWidth = -1.0 * maxWidth;
-            }
-            if(zProj > 0.0){
-                gl_Position = vec4(xProj / (maxWidth * 16.0) ,yProj / (maxWidth * 8.0) ,zProj / (800.0) - veriables.x ,1);
-            }
-            else{
-                gl_Position = vec4(xProj / (maxWidth * 8.0 * 1.77) ,yProj / (maxWidth * 8.0) ,zProj / (800.0) - veriables.x ,1);
-                // gl_Position = vec4(100,100,100,1);
-            }
-            
+            // Same scale as the original (x / (zProj * 0.1 / magnifier * 16) on a 2:1 canvas), but the
+            // divide now goes through w: the GPU clips geometry behind the camera instead of mirroring
+            // it, and zProj = 0 no longer divides by zero.
+            //   veriables.x = canvas aspect (width / height), .y = magnifier, .z = far plane
+            float focal = veriables.y * 1.25;
+            float n = 0.5;
+            float f = veriables.z;
+            // xAxis from getXaxisUnitVector points to screen-left, so negate it to un-mirror the image
+            gl_Position = vec4(-xProj * focal / veriables.x, yProj * focal,
+                               zProj * (f + n) / (f - n) - 2.0 * f * n / (f - n), zProj);
         }
         
         `
@@ -179,12 +172,11 @@ export default class Space {
         this.zAxisLoc = this.gl.getUniformLocation(this.program, "zAxis");
         this.gl.uniform3fv(this.zAxisLoc, new Float32Array(this.zUnitVec));
         // -------------------------------------------------------
-        this.zShifter = 1;
         this.magnifier = 1.75;
+        this.far = 2000;
         this.varsLocation = this.gl.getUniformLocation(this.program, "veriables");
-        this.gl.uniform3fv(this.varsLocation, new Float32Array([this.zShifter, this.magnifier, 0]));
-
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, this.totalVert);
+        this.dirty = true; // geometry must be (re)uploaded before the next draw
+        this.gl.clearColor(0, 0, 0, 1);
 
 
 
@@ -220,26 +212,11 @@ export default class Space {
         this.updateMyVectors();
 
 
+        // P / O: zoom in / out by changing the magnifier (focal length)
         document.addEventListener("keydown", (event) => {
-            if (event.code == "KeyZ") {
-                this.zShifter += 0.001;
-
-                this.varsLocation = this.gl.getUniformLocation(this.program, "veriables");
-                this.gl.uniform3fv(this.varsLocation, new Float32Array([this.zShifter, this.magnifier, 0]));
-            }
-            if (event.code == "KeyQ") {
-                this.zShifter += 0.001;
-
-                this.varsLocation = this.gl.getUniformLocation(this.program, "veriables");
-                this.gl.uniform3fv(this.varsLocation, new Float32Array([this.zShifter, this.magnifier, 0]));
-            }
-            if (event.code == "KeyP") {
-                this.magnifier += 0.1;
-
-                console.log("magnifier : "+this.magnifier)
-                this.varsLocation = this.gl.getUniformLocation(this.program, "veriables");
-                this.gl.uniform3fv(this.varsLocation, new Float32Array([this.zShifter, this.magnifier, 0]));
-            }
+            if (event.code == "KeyP") this.magnifier += 0.1;
+            else if (event.code == "KeyO") this.magnifier = Math.max(0.2, this.magnifier - 0.1);
+            else return;
             this.reDraw();
         })
 
@@ -254,48 +231,37 @@ export default class Space {
 
 
     reDraw() {
+        const gl = this.gl;
         this.updateMyVectors();
+        gl.useProgram(this.program);
+        gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        // cPoint[0] = space.Xc;
-        // cPoint[1] = space.Yc;
-        // cPoint[2] = space.Zc;
+        // Upload vertex data only when it changed: a new array was assigned, or moveStructure /
+        // callers set this.dirty. Camera moves only touch uniforms.
+        if (this.dirty || this.posArr !== this.uploadedPos || this.colArr !== this.uploadedCol) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, this.posArr instanceof Float32Array ? this.posArr : new Float32Array(this.posArr), gl.STATIC_DRAW);
+            gl.bindBuffer(gl.ARRAY_BUFFER, this.colBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, this.colArr instanceof Float32Array ? this.colArr : new Float32Array(this.colArr), gl.STATIC_DRAW);
+            this.uploadedPos = this.posArr;
+            this.uploadedCol = this.colArr;
+            this.dirty = false;
+        }
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
+        gl.vertexAttribPointer(this.posId, 4, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.colBuffer);
+        gl.vertexAttribPointer(this.colId, 4, gl.FLOAT, false, 0, 0);
 
-        // this.posBuffer = gl.createBuffer(posArr);
-        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.posBuffer);
-        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.posArr), this.gl.STATIC_DRAW);
+        gl.uniform3fv(this.cPointLoc, new Float32Array([this.Xc, this.Yc, this.Zc]));
+        gl.uniform3fv(this.vPointLoc, new Float32Array([this.X0, this.Y0, this.Z0]));
+        gl.uniform3fv(this.xAxisLoc, new Float32Array(this.xUnitVec));
+        gl.uniform3fv(this.yAxisLoc, new Float32Array(this.yUnitVec));
+        gl.uniform3fv(this.zAxisLoc, new Float32Array(this.zUnitVec));
+        const aspect = gl.drawingBufferWidth / Math.max(1, gl.drawingBufferHeight);
+        gl.uniform3fv(this.varsLocation, new Float32Array([aspect, this.magnifier, this.far]));
 
-        this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.colBuffer);
-        this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(this.colArr), this.gl.STATIC_DRAW);
-        // posId = this.gl.getAttribLocation(program, "pos");
-        // this.gl.enableVertexAttribArray(this.posId);
-        // this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.posBuffer);
-        // this.gl.vertexAttribPointer(this.posId, 4, this.gl.FLOAT, false, 0, 0);
-
-        // this.gl.useProgram(this.program);
-
-        // this.coordLoc = this.gl.getUniformLocation(this.program, "coord");
-        // this.gl.uniform3fv(this.coordLoc, new Float32Array([0, 0, 0]));
-
-        // -------------------points ---------------------------
-        // this.cPointLoc = this.gl.getUniformLocation(this.program, "cPoint");
-        this.gl.uniform3fv(this.cPointLoc, new Float32Array([this.Xc, this.Yc, this.Zc]));
-
-        // this.vPointLoc = this.gl.getUniformLocation(this.program, "vPoint");
-        this.gl.uniform3fv(this.vPointLoc, new Float32Array([this.X0, this.Y0, this.Z0]));
-
-        // -------------------unit vectors------------------------
-        // this.xAxisLoc = this.gl.getUniformLocation(this.program, "xAxis");
-        this.gl.uniform3fv(this.xAxisLoc, new Float32Array(this.xUnitVec));
-
-        // this.yAxisLoc = this.gl.getUniformLocation(this.program, "yAxis");
-        this.gl.uniform3fv(this.yAxisLoc, new Float32Array(this.yUnitVec));
-
-        // this.zAxisLoc = this.gl.getUniformLocation(this.program, "zAxis");
-        this.gl.uniform3fv(this.zAxisLoc, new Float32Array(this.zUnitVec));
-        // -------------------------------------------------------
-
-        this.gl.drawArrays(this.gl.TRIANGLES, 0, this.totalVert);
-
+        gl.drawArrays(gl.TRIANGLES, 0, this.totalVert);
     }
 
 
@@ -318,6 +284,7 @@ export default class Space {
             this.posArr[1 + 4 * i] += dy;
             this.posArr[2 + 4 * i] += dz;
         }
+        this.dirty = true;
         structure.minX += dx;
         structure.maxX += dx;
         structure.minY += dy;

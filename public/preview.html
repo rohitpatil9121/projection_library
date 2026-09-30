@@ -286,11 +286,11 @@
                 // world units per CSS pixel at the target's depth
                 const k = (1.6 * space.Rc / space.magnifier) / (canvas.clientWidth / 2);
                 const xa = space.xUnitVec, ya = space.yUnitVec;
-                space.X0 = drag.target[0] - (dx * xa[0] - dy * ya[0]) * k;
-                space.Y0 = drag.target[1] - (dx * xa[1] - dy * ya[1]) * k;
-                space.Z0 = drag.target[2] - (dx * xa[2] - dy * ya[2]) * k;
+                space.X0 = drag.target[0] + (dx * xa[0] + dy * ya[0]) * k;
+                space.Y0 = drag.target[1] + (dx * xa[1] + dy * ya[1]) * k;
+                space.Z0 = drag.target[2] + (dx * xa[2] + dy * ya[2]) * k;
             } else {
-                space.alpha = drag.alpha + dx / 250;
+                space.alpha = drag.alpha - dx / 250;
                 space.beta = drag.beta + dy / 250;
             }
             syncCamera();
