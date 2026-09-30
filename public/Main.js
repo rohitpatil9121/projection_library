@@ -15,6 +15,14 @@ let gl = canv.getContext("webgl");
 // let context = gl;
 let space = new Space(gl);
 
+function fitCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canv.width = Math.round(canv.clientWidth * dpr);
+    canv.height = Math.round(canv.clientHeight * dpr);
+    space.reDraw();
+}
+window.addEventListener("resize", fitCanvas);
+
 // space.Xc = 1;
 // space.Yc = 0;
 // space.Zc = 0;
@@ -367,22 +375,19 @@ function appendPrimeRect(i){
     addUnitBlock(xTranVal, yTranVes, zTranVal,2);
 }
 let t = 1;
-document.addEventListener("keydown", () => {
-    // for (let i = 0; i < 3; i++) {
-    //     for (let j = 0; j < 3; j++) {
-    //         for (let k = 0; k < 3; k++) {
-    //             if (i != 1 && j != 1 && k != 1) {
-    //                 addUnitBlock(i + t + 2, j + t * 2, k + t * 2);
-    //             }
-    //         }
-    //     }
-    // }
-    // t++;
-    // space.posArr = [];
-    // space.colArr = [];
-    appendPrimeRect(t);
-    t++;
-
+function addSteps(count) {
+    for (let i = 0; i < count; i++) {
+        appendPrimeRect(t);
+        t++;
+    }
+    space.reDraw();
+    updateInfo();
+}
+document.addEventListener("keydown", (event) => {
+    if (event.code == "Space" || event.code == "Enter") {
+        event.preventDefault();
+        addSteps(event.shiftKey ? 50 : 1);
+    }
 })
 document.addEventListener("DOMContentLoaded", (event) => {
     // for (let i = 0; i < 20; i++) {
@@ -1744,9 +1749,9 @@ document.addEventListener("mousemove", (event) => {
     // console.log(play);
     if (play) {
 
-        space.alpha = sudoAlp + (event.x - idealX) / 500;
+        space.alpha = sudoAlp - (event.x - idealX) / 500;
         space.beta = sudoBet + (event.y - idealY) / 500;
-        fun();
+        space.reDraw();
 
     }
 })
@@ -1768,12 +1773,28 @@ document.addEventListener("touchend", (event) => {
 document.addEventListener("touchmove", (event) => {
     if (play) {
         const touch = event.touches[0];
-        space.alpha = sudoAlp + (touch.clientX - idealX) / 500;
-        space.beta = sudoBet - (touch.clientY - idealY) / 500;
-        fun();
+        space.alpha = sudoAlp - (touch.clientX - idealX) / 500;
+        space.beta = sudoBet + (touch.clientY - idealY) / 500;
+        space.reDraw();
 
     }
 })
+
+// mouse wheel zooms (camera distance)
+canv.addEventListener("wheel", (event) => {
+    event.preventDefault();
+    space.Rc = Math.max(5, Math.min(1500, space.Rc * Math.exp(event.deltaY * 0.001)));
+    space.incRc(); space.decRc(); // recompute the camera position from Rc
+    space.reDraw();
+}, { passive: false });
+
+const info = document.getElementById("info");
+function updateInfo() {
+    if (info) info.textContent = `steps: ${t - 1}`;
+}
+
+fitCanvas();
+addSteps(300);
 
 window.fun = fun;
 window.fun2 = fun2;

@@ -1,62 +1,60 @@
 <div align="center">
-  <h1>Ulam Spiral 3D</h1>
-  <p><strong>A three-dimensional visualization of prime number distributions and mathematical patterns.</strong></p>
-  
-  <img src="https://raw.githubusercontent.com/rohit-s-init/ulam_spiral_3d/refs/heads/main/Screenshot%202026-04-01%20042922.png" alt="3D Ulam Spiral Screenshot" width="800">
+  <h1>projection_library</h1>
+  <p><strong>A from-scratch WebGL 3D engine: orbit camera, hand-built view basis, dot-product projection.</strong></p>
+
+  <img src="Screenshot 2026-04-01 042922.png" alt="3D prime walk screenshot" width="800">
 
   <p>
-    <kbd>JavaScript</kbd> | <kbd>3D Rendering</kbd> | <kbd>Number Theory</kbd> | <kbd>Mathematics</kbd>
+    <kbd>JavaScript</kbd> | <kbd>WebGL</kbd> | <kbd>3D Math</kbd> | <kbd>Number Theory</kbd>
   </p>
 </div>
 
 <hr>
 
 <h2>🚀 Overview</h2>
-<p>The Ulam Spiral is a classic method of visualizing prime numbers that reveals strange, diagonal patterns. This project extends the traditional 2D spiral into 3D space, allowing for deeper exploration of prime number theory through spatial visualization. By mapping integers onto a 3D coordinate system, we can observe how primality interacts with geometric structures.</p>
-
-<h2>✨ Features</h2>
+<p>No three.js, no matrix library. <code>Space.js</code> places a camera on a sphere around a view point, builds the camera's
+x/y/z axes itself, and projects every vertex in the vertex shader with dot products. Two demos ship with it:</p>
 <ul>
-  <li><b>3D Spatial Mapping:</b> High-performance rendering of integer sequences in a 3D spiral configuration.</li>
-  <li><b>Prime Detection:</b> Integrated algorithms to identify and highlight prime numbers within the spiral in real-time.</li>
-  <li><b>Interactive Camera:</b> Rotate, zoom, and pan around the 3D structure to observe patterns from different mathematical "angles."</li>
-  <li><b>Procedural Generation:</b> Dynamically generates the spiral based on user-defined limits, pushing the boundaries of browser-based rendering.</li>
+  <li><b>Prime Walk 3D</b> (<code>index.html</code>): a walk through 3D space that turns every time it reaches a prime number, drawing one cube per step.</li>
+  <li><b>OBJ Preview</b> (<code>preview.html</code>): load an <code>.obj</code> (plus <code>.mtl</code> and textures) and inspect it with orbit, pan and zoom.</li>
 </ul>
 
-<h2>🛠️ Tech Stack</h2>
+<h2>🧠 How the rendering works</h2>
+<ol>
+  <li><b>Camera.</b> The camera <code>(Xc, Yc, Zc)</code> orbits the view point <code>(X0, Y0, Z0)</code> at distance <code>Rc</code>,
+    steered by <code>alpha</code> (yaw) and <code>beta</code> (pitch). The world is Z-up.</li>
+  <li><b>View basis.</b> <code>getZaxisUnitVector</code> is the view direction. <code>getYaxisUnitVector</code> projects world-up onto the view
+    plane, and <code>getXaxisUnitVector</code> is their cross product.</li>
+  <li><b>Projection.</b> The vertex shader moves each vertex into camera space with three dot products, then divides by depth
+    through <code>gl_Position.w</code>. The GPU clips anything behind the camera.</li>
+  <li><b>Geometry.</b> <code>Structure</code> holds a slice of triangles (<code>vec4</code> positions and colors). <code>addStructure</code> appends it to
+    <code>posArr</code>/<code>colArr</code>, and <code>reDraw()</code> uploads only when the geometry has changed.</li>
+</ol>
+
+<h2>🎮 Controls (Prime Walk)</h2>
+<table>
+  <tr><td><kbd>Space</kbd> / <kbd>Enter</kbd></td><td>Add one step (hold <kbd>Shift</kbd> to add 50)</td></tr>
+  <tr><td>Drag / <kbd>A</kbd> <kbd>D</kbd> <kbd>W</kbd> <kbd>S</kbd></td><td>Rotate the camera</td></tr>
+  <tr><td>Wheel / <kbd>V</kbd> <kbd>C</kbd></td><td>Camera distance</td></tr>
+  <tr><td><kbd>P</kbd> / <kbd>O</kbd></td><td>Magnify in / out</td></tr>
+  <tr><td><kbd>I</kbd> <kbd>K</kbd> <kbd>J</kbd> <kbd>L</kbd></td><td>Move the view point</td></tr>
+</table>
+
+<h2>📁 Project structure</h2>
 <ul>
-  <li><b>Language:</b> JavaScript (ES6+)</li>
-  <li><b>Rendering Engine:</b> Custom WebGL/Canvas implementation (or Three.js if applicable).</li>
-  <li><b>Math Logic:</b> Optimized Sieve of Eratosthenes or primality testing for real-time calculation.</li>
+  <li><code>index.js</code>: Express static server for <code>public/</code></li>
+  <li><code>public/Space.js</code>: the engine (camera, basis, shaders, buffers)</li>
+  <li><code>public/Main.js</code>: Prime Walk demo</li>
+  <li><code>public/preview.html</code>: OBJ viewer</li>
+  <li><code>public/Shapes/</code>: <code>Structure</code>, <code>Path</code>, <code>Face</code></li>
 </ul>
 
-<h2>📁 Project Structure</h2>
-<ul>
-  <li><code>index.js</code>: Main logic for coordinate calculation and 3D projection.</li>
-  <li><code>public/</code>: HTML wrapper and styling for the visualization.</li>
-  <li><code>package.json</code>: Project scripts and metadata.</li>
-</ul>
-
-<h2>⚙️ Getting Started</h2>
-
-<h3>Prerequisites</h3>
-<p>A modern web browser with WebGL support and Node.js for local development.</p>
-
-<h3>Installation</h3>
-<p>1. Clone the repository:</p>
-<pre>git clone https://github.com/rohit-s-init/ulam_spiral_3d.git</pre>
-
-<p>2. Install dependencies:</p>
-<pre>npm install</pre>
-
-<h3>Running the Project</h3>
-<p>To view the visualization locally:</p>
-<pre>npm start</pre>
-<p>Navigate to <code>http://localhost:3000</code> in your browser.</p>
-
-<h2>🧠 Mathematical Concept</h2>
-<p>The Ulam spiral is constructed by soot-tracing integers starting from 1 in a center-outward spiral. When primes are marked, they tend to cluster along diagonal lines. In this 3D version, the Z-axis is utilized to represent [Explain Z-Axis Use, e.g., "the value of the integer" or "prime density gaps"], providing a structural look at the "randomness" of primes.</p>
-
-
+<h2>⚙️ Getting started</h2>
+<pre>git clone https://github.com/rohit-s-init/projection_library.git
+cd projection_library
+npm install
+npm start</pre>
+<p>Open <code>http://localhost:9600</code> (or set <code>PORT</code>). The OBJ viewer is at <code>/preview.html</code>.</p>
 
 <hr>
 

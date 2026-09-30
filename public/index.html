@@ -4,48 +4,49 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>Prime Walk 3D · projection_library</title>
     <style>
-        body{
-            background-color:black;
-            /* flex: none; */
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: black;
             overflow: hidden;
-            /* margin: 0px; */
-            /* adding: 0; */
+            font: 13px/1.5 system-ui, "Segoe UI", sans-serif;
+            color: #cfd6e6;
         }
+
         #myBoard {
-            width: 1707px;
-            height: 960px;
-            background-color:black;
-            /* margin: auto; */
-            /* display: block; */
-            /* border: 3px solid brown; */
-            margin-left: -7px;
-            margin-top: -7px;
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
         }
-        
+
+        #hud {
+            position: fixed;
+            left: 12px;
+            bottom: 12px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            background: rgba(15, 18, 28, 0.8);
+            border: 1px solid #2a2f3b;
+            pointer-events: none;
+        }
+
+        #hud b { color: #fff; }
+        #info { color: #8fd0ff; margin-bottom: 4px; }
     </style>
 </head>
 
 <body>
-
-    <canvas id="myBoard" width="1707px" height="960px"></canvas>
-    
+    <canvas id="myBoard"></canvas>
+    <div id="hud">
+        <div id="info"></div>
+        <b>Space</b> add a step · <b>Shift+Space</b> add 50<br>
+        <b>Drag</b> rotate · <b>Wheel</b> zoom · <b>P / O</b> magnify<br>
+        <b>A D W S</b> rotate · <b>I K J L</b> move · <b>V C</b> distance
+    </div>
+    <script type="module" src="Main.js"></script>
 </body>
-
-<!-- <script>
-
-    let canvas = document.getElementById("myBoard");
-    /**@type{CanvasRenderContext2D}*/
-    context = canvas.getContext("2d");
-    context.fillRect(0,0,10,10);
-    context.stroke();
-
-</script> -->
-<script type="module" src="Main.js"></script>
-<script type="module" src="Point.js"></script>
-<script type="module" src="Space.js"></script>
-<script type="module" src="Shapes/Face.js"></script>
-<script type="module" src="Shapes/Path.js"></script>
 
 </html>
