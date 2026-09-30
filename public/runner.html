@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Neon Rush · projection_library</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800;900&family=Rajdhani:wght@500;600;700&display=swap">
+    <style>
+        :root {
+            --pink: #ff3fa4; --cyan: #3fe8ff; --gold: #ffd166; --violet: #9b6bff;
+            --panel: rgba(14, 8, 30, 0.62); --line: rgba(255, 120, 220, 0.25); --dim: #b4a8d8;
+            --display: "Orbitron", system-ui, sans-serif; --body: "Rajdhani", system-ui, sans-serif;
+        }
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+        html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0418; color: #fff; font-family: var(--body); user-select: none; }
+        #view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+        .hidden { display: none !important; }
+        button { font: inherit; cursor: pointer; color: inherit; }
+        kbd { font-family: var(--display); font-size: 10px; font-weight: 800; padding: 3px 7px; border-radius: 5px;
+            border: 1px solid rgba(255, 255, 255, .3); border-bottom-width: 2px; background: rgba(255, 255, 255, .08); }
+
+        .glass { background: var(--panel); border: 1px solid var(--line); border-radius: 16px;
+            backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%);
+            box-shadow: 0 20px 60px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .06); }
+
+        /* ---------- overlays ---------- */
+        .overlay { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px; z-index: 5; }
+        .overlay.dim { background: radial-gradient(ellipse at center, rgba(20, 4, 40, .35), rgba(8, 2, 18, .8)); }
+        .card { width: min(520px, 100%); text-align: center; padding: 30px 28px 26px; }
+        .logo { font-family: var(--display); font-weight: 900; font-size: clamp(46px, 12vw, 86px); line-height: .9; margin: 0; letter-spacing: .02em;
+            background: linear-gradient(180deg, #fff 0%, var(--gold) 30%, var(--pink) 70%, var(--violet) 100%);
+            -webkit-background-clip: text; background-clip: text; color: transparent;
+            filter: drop-shadow(0 0 18px rgba(255, 63, 164, .55)); transform: skew(-8deg); }
+        .tag { font-family: var(--display); font-size: 11px; letter-spacing: .45em; color: var(--cyan); margin: 14px 0 4px;
+            text-shadow: 0 0 12px var(--cyan); }
+        .sub { color: var(--dim); font-size: 16px; margin: 0 0 22px; }
+        .bestLine { font-family: var(--display); font-size: 12px; letter-spacing: .2em; color: var(--dim); margin-bottom: 20px; }
+        .bestLine b { color: var(--gold); font-size: 16px; letter-spacing: .05em; text-shadow: 0 0 10px rgba(255, 209, 102, .6); }
+        .play { font-family: var(--display); font-weight: 800; font-size: 16px; letter-spacing: .2em; padding: 16px 44px; border: 0; border-radius: 12px;
+            color: #16051f; background: linear-gradient(100deg, var(--gold), var(--pink)); box-shadow: 0 10px 40px rgba(255, 63, 164, .45);
+            transition: transform .15s, box-shadow .15s; }
+        .play:hover { transform: translateY(-2px) scale(1.02); box-shadow: 0 14px 50px rgba(255, 63, 164, .6); }
+        .ghost { font-family: var(--display); font-weight: 600; font-size: 12px; letter-spacing: .15em; padding: 14px 22px; border-radius: 12px;
+            border: 1px solid var(--line); background: rgba(255, 255, 255, .04); margin-left: 8px; }
+        .ghost:hover { border-color: var(--cyan); }
+        .controls { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 18px; margin-top: 24px; text-align: left; font-size: 15px; color: var(--dim); }
+        .controls span { color: #fff; }
+        .pills { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 18px; }
+        .pill { font-size: 13px; padding: 5px 10px; border-radius: 99px; border: 1px solid var(--line); color: var(--dim); }
+        .pill i { font-style: normal; margin-right: 4px; }
+        .credit { margin-top: 18px; font-size: 13px; color: var(--dim); }
+        .credit a { color: var(--cyan); }
+
+        /* ---------- HUD ---------- */
+        #hud { position: fixed; inset: 0; pointer-events: none; z-index: 3; }
+        #scoreBox { position: absolute; top: 16px; left: 50%; transform: translateX(-50%); text-align: center; }
+        #score { font-family: var(--display); font-weight: 900; font-size: clamp(34px, 7vw, 54px); letter-spacing: .02em; line-height: 1;
+            text-shadow: 0 0 20px rgba(255, 63, 164, .8), 0 0 2px #000; font-variant-numeric: tabular-nums; }
+        #mult { display: inline-block; margin-top: 6px; font-family: var(--display); font-weight: 800; font-size: 14px; padding: 3px 10px; border-radius: 99px;
+            background: rgba(255, 255, 255, .08); color: var(--dim); transition: all .2s; }
+        #mult.hot { background: var(--gold); color: #1a0826; box-shadow: 0 0 18px var(--gold); transform: scale(1.1); }
+        .stat { position: absolute; top: 16px; padding: 10px 14px; min-width: 120px; }
+        .stat .lbl { font-family: var(--display); font-size: 9px; letter-spacing: .3em; color: var(--dim); }
+        .stat .val { font-family: var(--display); font-weight: 800; font-size: 20px; margin-top: 3px; font-variant-numeric: tabular-nums; }
+        #left { left: 16px; }
+        #left .val b { color: var(--gold); }
+        #right { right: 16px; text-align: right; pointer-events: auto; display: flex; gap: 8px; padding: 8px; min-width: 0; }
+        #right button { width: 40px; height: 40px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, .06); font-size: 16px; }
+        #speedBox { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); width: min(420px, calc(100% - 32px)); padding: 10px 16px 12px; }
+        .row { display: flex; justify-content: space-between; align-items: center; }
+        #speedTrack { height: 8px; border-radius: 6px; background: rgba(255, 255, 255, .1); margin-top: 8px; overflow: hidden; }
+        #speedFill { height: 100%; width: 8%; border-radius: 6px; background: linear-gradient(90deg, var(--cyan), var(--violet), var(--pink));
+            box-shadow: 0 0 14px var(--pink); transition: width .2s; }
+        #speedVal { font-family: var(--display); font-size: 12px; font-weight: 800; }
+        #shieldIcon { font-family: var(--display); font-size: 10px; letter-spacing: .15em; padding: 3px 8px; border-radius: 99px;
+            border: 1px solid rgba(255, 255, 255, .15); color: rgba(255, 255, 255, .3); }
+        #shieldIcon.on { color: #06131a; background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 16px var(--cyan); }
+
+        /* ---------- game over ---------- */
+        .kicker { font-family: var(--display); font-size: 12px; letter-spacing: .5em; color: var(--pink); text-shadow: 0 0 12px var(--pink); }
+        #finalScore { font-family: var(--display); font-weight: 900; font-size: clamp(48px, 12vw, 76px); margin: 8px 0 4px; line-height: 1;
+            background: linear-gradient(180deg, #fff, var(--gold)); -webkit-background-clip: text; background-clip: text; color: transparent;
+            filter: drop-shadow(0 0 16px rgba(255, 209, 102, .5)); }
+        #newBest { display: inline-block; font-family: var(--display); font-weight: 800; font-size: 11px; letter-spacing: .25em; padding: 5px 12px;
+            border-radius: 99px; background: var(--gold); color: #1a0826; box-shadow: 0 0 20px var(--gold); animation: pop .5s cubic-bezier(.2, 1.8, .4, 1); }
+        @keyframes pop { from { transform: scale(0); } }
+        .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 22px 0; }
+        .stats div { padding: 12px; border-radius: 12px; background: rgba(255, 255, 255, .05); border: 1px solid var(--line); text-align: left; }
+        .stats small { display: block; font-family: var(--display); font-size: 9px; letter-spacing: .25em; color: var(--dim); }
+        .stats b { font-family: var(--display); font-size: 18px; }
+        .pauseTitle { font-family: var(--display); font-weight: 900; font-size: 40px; letter-spacing: .15em; margin: 0 0 18px; }
+
+        @media (max-width: 640px) {
+            .stat { top: auto; bottom: 90px; min-width: 0; }
+            #left { left: 12px; } #right { top: 12px; bottom: auto; right: 12px; }
+            .controls { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+
+<body>
+    <canvas id="view"></canvas>
+
+    <!-- menu -->
+    <div id="menu" class="overlay">
+        <div class="card glass">
+            <h1 class="logo">NEON<br>RUSH</h1>
+            <div class="tag">AN ENDLESS SYNTHWAVE RUN</div>
+            <p class="sub">Dodge the walls, jump the bars, chain orbs for a multiplier.</p>
+            <div class="bestLine">BEST &nbsp;<b id="menuBest">0</b></div>
+            <button id="playBtn" class="play">PLAY</button>
+            <div class="controls">
+                <div><kbd>A</kbd> <kbd>D</kbd> / <kbd>←</kbd> <kbd>→</kbd> <span>change lane</span></div>
+                <div><kbd>W</kbd> / <kbd>Space</kbd> <span>jump</span></div>
+                <div><kbd>S</kbd> / <kbd>↓</kbd> <span>drop fast</span></div>
+                <div><kbd>P</kbd> <span>pause</span> · <kbd>M</kbd> <span>mute</span></div>
+            </div>
+            <div class="pills">
+                <span class="pill"><i>🟡</i>orb +25 × multiplier</span>
+                <span class="pill"><i>🔷</i>shield blocks one hit</span>
+                <span class="pill"><i>📱</i>swipe / tap on touch</span>
+            </div>
+            <div class="credit">Rendered with <a href="./">projection_library</a>'s <code>Space</code> engine and custom GLSL shaders</div>
+        </div>
+    </div>
+
+    <!-- HUD -->
+    <div id="hud" class="hidden">
+        <div id="left" class="stat glass">
+            <div class="lbl">ORBS</div>
+            <div class="val"><b id="orbs">0</b></div>
+            <div class="lbl" style="margin-top:8px">DISTANCE</div>
+            <div class="val" id="dist" style="font-size:15px">0 m</div>
+        </div>
+        <div id="scoreBox">
+            <div id="score">0</div>
+            <div id="mult">x1</div>
+        </div>
+        <div id="right" class="stat glass">
+            <button id="pauseBtn" title="Pause (P)">❚❚</button>
+            <button id="muteBtn" title="Mute (M)">🔊</button>
+        </div>
+        <div id="speedBox" class="glass">
+            <div class="row"><span class="lbl" style="font-family:var(--display);font-size:9px;letter-spacing:.3em;color:var(--dim)">SPEED</span>
+                <span id="shieldIcon">SHIELD</span><span id="speedVal">72 km/h</span></div>
+            <div id="speedTrack"><div id="speedFill"></div></div>
+        </div>
+    </div>
+
+    <!-- pause -->
+    <div id="pause" class="overlay dim hidden">
+        <div class="card glass">
+            <h2 class="pauseTitle">PAUSED</h2>
+            <button id="resumeBtn" class="play">RESUME</button>
+        </div>
+    </div>
+
+    <!-- game over -->
+    <div id="over" class="overlay dim hidden">
+        <div class="card glass">
+            <div class="kicker">RUN OVER</div>
+            <div id="finalScore">0</div>
+            <span id="newBest" class="hidden">NEW BEST</span>
+            <div class="stats">
+                <div><small>DISTANCE</small><b id="statDist">0 m</b></div>
+                <div><small>ORBS</small><b id="statOrbs">0</b></div>
+                <div><small>TOP SPEED</small><b id="statSpeed">0</b></div>
+                <div><small>BEST</small><b id="statBest">0</b></div>
+            </div>
+            <button id="retryBtn" class="play">RUN AGAIN</button>
+            <button id="menuBtn" class="ghost">MENU</button>
+        </div>
+    </div>
+
+    <div id="nogl" class="overlay hidden"><div class="card glass">WebGL isn't available in this browser.</div></div>
+
+    <script type="module" src="runner/game.js"></script>
+</body>
+
+</html>
