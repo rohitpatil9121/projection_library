@@ -54,6 +54,7 @@ x/y/z axes itself, and projects every vertex in the vertex shader with dot produ
 cd projection_library
 npm install
 npm start</pre>
+<p><b>Live demo:</b> <a href="https://rohitpatil9121.github.io/projection_library/">Prime Walk 3D</a> · <a href="https://rohitpatil9121.github.io/projection_library/preview.html">OBJ Preview</a></p>
 <p>Open <code>http://localhost:9600</code> (or set <code>PORT</code>). The OBJ viewer is at <code>/preview.html</code>.</p>
 
 <hr>
