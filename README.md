@@ -50,7 +50,7 @@ x/y/z axes itself, and projects every vertex in the vertex shader with dot produ
 </ul>
 
 <h2>⚙️ Getting started</h2>
-<pre>git clone https://github.com/rohit-s-init/projection_library.git
+<pre>git clone https://github.com/rohitpatil9121/projection_library.git
 cd projection_library
 npm install
 npm start</pre>
@@ -59,5 +59,5 @@ npm start</pre>
 <hr>
 
 <div align="center">
-  <p>Developed with ❤️ by <a href="https://github.com/rohit-s-init">Rohit Sawant</a></p>
+  <p>Originally developed with ❤️ by <a href="https://github.com/rohit-s-init">Rohit Sawant</a> (<a href="https://github.com/rohit-s-init/projection_library">original repo</a>)</p>
 </div>
