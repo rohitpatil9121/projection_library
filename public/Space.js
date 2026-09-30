@@ -176,6 +176,8 @@ export default class Space {
         this.far = 2000;
         this.varsLocation = this.gl.getUniformLocation(this.program, "veriables");
         this.dirty = true; // geometry must be (re)uploaded before the next draw
+        this.uploadedLen = 0;
+        this.gpuCapacity = 0;
         this.gl.clearColor(0, 0, 0, 1);
 
 
@@ -212,10 +214,10 @@ export default class Space {
         this.updateMyVectors();
 
 
-        // P / O: zoom in / out by changing the magnifier (focal length)
+        // = / - : magnify in / out (focal length). O is used by Main.js to move the view point.
         document.addEventListener("keydown", (event) => {
-            if (event.code == "KeyP") this.magnifier += 0.1;
-            else if (event.code == "KeyO") this.magnifier = Math.max(0.2, this.magnifier - 0.1);
+            if (event.code == "Equal" || event.code == "NumpadAdd") this.magnifier += 0.1;
+            else if (event.code == "Minus" || event.code == "NumpadSubtract") this.magnifier = Math.max(0.2, this.magnifier - 0.1);
             else return;
             this.reDraw();
         })
@@ -237,16 +239,13 @@ export default class Space {
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        // Upload vertex data only when it changed: a new array was assigned, or moveStructure /
-        // callers set this.dirty. Camera moves only touch uniforms.
+        // Upload vertex data only when it changed. Camera moves only touch uniforms.
+        //  - a new array was assigned, or this.dirty is set (e.g. moveStructure): full upload
+        //  - the arrays only grew (addStructure / addElements): upload just the new tail
         if (this.dirty || this.posArr !== this.uploadedPos || this.colArr !== this.uploadedCol) {
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, this.posArr instanceof Float32Array ? this.posArr : new Float32Array(this.posArr), gl.STATIC_DRAW);
-            gl.bindBuffer(gl.ARRAY_BUFFER, this.colBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, this.colArr instanceof Float32Array ? this.colArr : new Float32Array(this.colArr), gl.STATIC_DRAW);
-            this.uploadedPos = this.posArr;
-            this.uploadedCol = this.colArr;
-            this.dirty = false;
+            this.uploadFull();
+        } else if (this.posArr.length > this.uploadedLen) {
+            this.uploadTail();
         }
         gl.bindBuffer(gl.ARRAY_BUFFER, this.posBuffer);
         gl.vertexAttribPointer(this.posId, 4, gl.FLOAT, false, 0, 0);
@@ -265,17 +264,57 @@ export default class Space {
     }
 
 
+    // GPU buffers keep spare capacity so appended geometry can be sent with bufferSubData.
+    uploadFull() {
+        const gl = this.gl, n = this.posArr.length;
+        this.gpuCapacity = Math.max(1024, n * 2);
+        for (const [buf, arr] of [[this.posBuffer, this.posArr], [this.colBuffer, this.colArr]]) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferData(gl.ARRAY_BUFFER, this.gpuCapacity * 4, gl.DYNAMIC_DRAW);
+            gl.bufferSubData(gl.ARRAY_BUFFER, 0, arr instanceof Float32Array ? arr : new Float32Array(arr));
+        }
+        this.uploadedPos = this.posArr;
+        this.uploadedCol = this.colArr;
+        this.uploadedLen = n;
+        this.dirty = false;
+    }
+    uploadTail() {
+        if (this.posArr.length > this.gpuCapacity) return this.uploadFull();
+        const gl = this.gl, from = this.uploadedLen;
+        for (const [buf, arr] of [[this.posBuffer, this.posArr], [this.colBuffer, this.colArr]]) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+            gl.bufferSubData(gl.ARRAY_BUFFER, from * 4, new Float32Array(arr.slice(from)));
+        }
+        this.uploadedLen = this.posArr.length;
+    }
+
+    // Appends happen in place (no concat copy of the whole scene per structure).
+    appendArrays(pos, col) {
+        if (!Array.isArray(this.posArr)) this.posArr = Array.from(this.posArr);
+        if (!Array.isArray(this.colArr)) this.colArr = Array.from(this.colArr);
+        for (let i = 0; i < pos.length; i++) this.posArr.push(pos[i]);
+        for (let i = 0; i < col.length; i++) this.colArr.push(col[i]);
+    }
+
     addElements(sudoPosArr, sudoColArr) {
-        this.posArr = this.posArr.concat(sudoPosArr);
-        this.colArr = this.colArr.concat(sudoColArr);
+        this.appendArrays(sudoPosArr, sudoColArr);
+        this.totalVert += sudoPosArr.length / 4;
     }
 
     addStructure(structure/**@type {Structure} */) {
-        this.posArr = this.posArr.concat(structure.vertArrays);
-        this.colArr = this.colArr.concat(structure.colArr);
+        this.appendArrays(structure.vertArrays, structure.colArr);
         structure.startVertId += this.totalVert;
         structure.endVertId += this.totalVert;
-        this.totalVert += (3 * structure.vertArrays.length) / 4;
+        // one vertex = 4 floats (x, y, z, w); this used to add 3x the real count
+        this.totalVert += structure.vertArrays.length / 4;
+    }
+
+    // remove all geometry
+    clearScene() {
+        this.posArr = [];
+        this.colArr = [];
+        this.totalVert = 0;
+        this.dirty = true;
     }
 
     moveStructure(structure, dx, dy, dz) {

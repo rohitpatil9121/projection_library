@@ -28,17 +28,25 @@ x/y/z axes itself, and projects every vertex in the vertex shader with dot produ
   <li><b>Projection.</b> The vertex shader moves each vertex into camera space with three dot products, then divides by depth
     through <code>gl_Position.w</code>. The GPU clips anything behind the camera.</li>
   <li><b>Geometry.</b> <code>Structure</code> holds a slice of triangles (<code>vec4</code> positions and colors). <code>addStructure</code> appends it to
-    <code>posArr</code>/<code>colArr</code>, and <code>reDraw()</code> uploads only when the geometry has changed.</li>
+    <code>posArr</code>/<code>colArr</code> in place, and <code>reDraw()</code> sends only the newly added vertices to the GPU
+    (into a buffer with spare capacity). Camera moves only update uniforms.</li>
 </ol>
 
 <h2>🎮 Controls (Prime Walk)</h2>
 <table>
+  <tr><td>Drag</td><td>Orbit (flick to spin)</td></tr>
+  <tr><td>Right-drag / <kbd>Shift</kbd>-drag</td><td>Pan</td></tr>
+  <tr><td>Wheel / pinch</td><td>Zoom</td></tr>
   <tr><td><kbd>Space</kbd> / <kbd>Enter</kbd></td><td>Add one step (hold <kbd>Shift</kbd> to add 50)</td></tr>
-  <tr><td>Drag / <kbd>A</kbd> <kbd>D</kbd> <kbd>W</kbd> <kbd>S</kbd></td><td>Rotate the camera</td></tr>
-  <tr><td>Wheel / <kbd>V</kbd> <kbd>C</kbd></td><td>Camera distance</td></tr>
-  <tr><td><kbd>P</kbd> / <kbd>O</kbd></td><td>Magnify in / out</td></tr>
-  <tr><td><kbd>I</kbd> <kbd>K</kbd> <kbd>J</kbd> <kbd>L</kbd></td><td>Move the view point</td></tr>
+  <tr><td><kbd>G</kbd></td><td>Auto-grow on / off</td></tr>
+  <tr><td><kbd>F</kbd></td><td>Frame the whole walk (auto-framing is on until you pan or zoom)</td></tr>
+  <tr><td><kbd>R</kbd></td><td>Reset the walk</td></tr>
+  <tr><td><kbd>A</kbd> <kbd>D</kbd> <kbd>W</kbd> <kbd>S</kbd></td><td>Rotate the camera</td></tr>
+  <tr><td><kbd>J</kbd> <kbd>L</kbd> <kbd>O</kbd> <kbd>M</kbd> <kbd>I</kbd> <kbd>K</kbd></td><td>Move left / right / up / down / forward / back</td></tr>
+  <tr><td><kbd>V</kbd> <kbd>C</kbd></td><td>Camera distance</td></tr>
+  <tr><td><kbd>=</kbd> / <kbd>-</kbd></td><td>Magnify in / out</td></tr>
 </table>
+<p>Gold cubes are primes (the turning points); the rest of the path fades through a rainbow as <i>n</i> grows.</p>
 
 <h2>📁 Project structure</h2>
 <ul>
