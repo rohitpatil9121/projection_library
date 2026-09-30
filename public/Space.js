@@ -18,6 +18,10 @@
  * getPointParameter, getMagnifiedPosition, getMagniValue, fillFace) and its unused fields were
  * removed; keyboard handling moved out of the engine into the demos; shader failures now throw
  * with the compiler log instead of calling alert().
+ *
+ * @deprecated Kept as a stable compatibility layer for Prime Walk, the OBJ viewer and Neon Rush (which
+ * vendors its own copy). New code should use the engine: import { Game, Camera } from "./engine/index.js".
+ * engine/Camera.js implements the same camera and basis maths; tests/engine.test.js checks the two agree.
  */
 export default class Space {
 

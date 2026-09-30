@@ -1,7 +1,7 @@
 # Architecture
 
-> Status: **P0 (audit)**. This file describes what exists today and the target architecture for
-> PROJECTION LAB. Sections marked *Target* are plans, not code. They get updated phase by phase.
+> Status: **P1 (core engine) done.** §1 is the P0 audit; §7 describes the engine as built in P1.
+> Sections marked *Target* are plans, not code. They get updated phase by phase.
 
 ## 1. What exists today (audited P0)
 
@@ -147,15 +147,16 @@ targets and multiple render targets are WebGL2 features, so the WebGL1 fallback 
 `tests/compat.html` exercise: `addStructure`, `addElements`, `clearScene`, `reDraw`, `moveStructure`,
 the camera fields, `magnifier`/`far`, and subclassing with a swapped program (the Neon Rush pattern).
 
-## 3. Decisions that need the owner *(open)*
+## 3. Decisions
 
-| ID | Question | Recommendation |
+| ID | Question | Decision |
 |---|---|---|
-| D1 | Delete the ~50 MB of unreferenced model data and the editor folders from `public/`? | Delete `cup verts.txt`, the duplicate STL, `.idea/`, `.vscode/`, `note.txat`. Move **one** STL to `public/assets/models/` (as a real test asset for the P7 STL loader), converted to binary STL (~10× smaller). |
-| D2 | GSAP (used by Neon Rush's UI) uses a custom "Standard no-charge" license, not one on the allowed list. | For **this** repo, animate the UI with our own `Tween` (P4) plus CSS/Web Animations API. Neon Rush can be migrated to `Tween` later (separate repo, only if you want). |
-| D3 | Google Fonts are SIL OFL 1.1, which isn't on the allowed list, though it is the standard license for fonts and allows embedding. | Allow OFL **for fonts only**, and self-host the two font files in `public/vendor/fonts/` (works offline, no third-party request). |
-| D4 | twgl.js | **Skip.** It would hide exactly the WebGL plumbing this repo exists to teach. We write our own small `ShaderProgram`/`Buffer`/`RenderTarget` wrappers. |
-| D5 | Lighthouse "Performance ≥ 85" with a live WebGL hero | Achievable only if the hero is lazy-started after first paint and the loading screen is not artificially delayed. Planned that way. |
+| D1 | Delete the ~50 MB of unreferenced model data and the editor folders from `public/`? | **Done (P1).** Deleted `cup verts.txt`, both identical ASCII STLs, `.idea/`, `.vscode/`, `note.txat`. The mug is kept as `assets/models/teamug.stl` (binary, 59,330 triangles, 2.97 MB). `public/` went from ~53 MB to ~3 MB. |
+| D2 | GSAP uses a custom "Standard no-charge" license, not on the allowed list. | **Accepted.** No GSAP in this repo; our own `Tween` (P4) + CSS / Web Animations API. Neon Rush keeps it for now. |
+| D3 | Fonts are SIL OFL 1.1. | **Accepted.** OFL allowed for fonts only, self-hosted in `public/vendor/fonts/` (P3). |
+| D4 | twgl.js | **Skipped.** Our own small wrappers (`gl/ShaderProgram`, `Geometry`, `Mesh`). |
+| D5 | Lighthouse "Performance ≥ 85" with a live WebGL hero | Planned: hero starts after first paint; no artificial loading delay. |
+| D6 | Import map vs relative vendored paths | **Relative vendored paths through one file (`engine/vendor.js`).** Pages live at different depths (`/`, `/examples/`, `/experiments/x/`), so a single import map would need a different base per page. The pinned version is part of the path; upgrading is a one-line change. |
 
 ## 4. Dependency strategy
 
@@ -200,3 +201,54 @@ the camera fields, `magnifier`/`far`, and subclassing with a swapped program (th
 | Performance targets on mid-range Android | Quality tiers + auto-downgrade from P3; measured, not assumed. The actual device test must be done by you (I can only emulate). |
 | Lighthouse/a11y scores are measured in a real browser run | I'll run Lighthouse via the browser where possible and report the real numbers, pass or fail. |
 | Breaking Neon Rush's pattern | It vendors its own engine copy; the compat tests cover its subclassing pattern anyway. |
+
+## 7. The engine as built (P1)
+
+### 7.1 Modules
+
+| Module | Responsibility |
+|---|---|
+| `engine/config.js` | All engine constants: attribute slots, quality presets, loop timing, camera limits, default lighting. |
+| `engine/vendor.js` | The only import of third-party code (gl-matrix 3.4.4, vendored). |
+| `engine/gl/GLContext.js` | WebGL2 first, WebGL1 fallback; patches VAO + instancing extensions onto WebGL1 under WebGL2 names; readable failure panel. |
+| `engine/gl/ShaderProgram.js` | Compile/link with `#define` variants, fixed attribute locations, cached uniform setters (per context), `ShaderError` with stage + parsed line numbers. |
+| `engine/Camera.js` | The projection_library camera: orbit (yaw/pitch/distance = alpha/beta/Rc), follow (damping + look-ahead), first-person, shake offset. Basis from the original lambda construction. CPU `project()` / `screenRay()` for picking and labels. |
+| `shaders/chunks/projection.js` | `projectLab()`: the dot-product projection every vertex shader uses. |
+| `engine/Geometry.js`, `engine/geometry/primitives.js` | Typed-array vertex data, lazily uploaded per context. Box, sphere, plane, cylinder, cone, torus, capsule, grid, lines. |
+| `engine/Material.js`, `shaders/basic/` | `BasicMaterial`: unlit or Lambert (hemisphere + sun), colour, opacity, emissive, vertex colours. |
+| `engine/Mesh.js` | `Mesh` (one VAO per context) and `InstancedMesh` (per-instance mat4 + colour, dirty-range `bufferSubData`). |
+| `engine/Transform.js`, `Entity.js`, `Scene.js` | Position / quaternion / scale hierarchy; render-time interpolation between fixed steps; behaviours; deferred destroy. |
+| `engine/Loop.js` | Fixed 60 Hz simulation, interpolated render, timeScale, pause, auto-pause when hidden, stall clamping. |
+| `engine/Input.js` | Action and axis mapping over keyboard, mouse, touch (drag, pinch), wheel, pointer lock, gamepad. One-report-per-step edge semantics. Binds nothing by default. |
+| `engine/Renderer.js` | ResizeObserver + DPR cap per quality, program variant cache, opaque batching by program, transparent back-to-front, per-frame uniforms once per program, stats. |
+| `engine/Game.js` | Facade: `new Game({ canvas })`, `add()`, `onUpdate()`, `onRender()`, `start()`. Shows the failure panel instead of throwing when WebGL is missing. |
+
+### 7.2 Key decisions
+- **GLSL ES 1.00 everywhere (P1).** Both WebGL1 and WebGL2 accept it, so there's one shader source per material. P2 introduces GLSL 3.00 only where WebGL2-only features (HDR float targets) need it.
+- **Fixed attribute slots** (`config.ATTRIB`) are bound before linking, so a VAO built once works with every program variant.
+- **Program variants by `#define`** (`LIT`, `VERTEX_COLORS`, `INSTANCED`), cached per renderer; meshes cache their program and rebuild only when `material.invalidateProgram()` bumps its version.
+- **No per-frame allocation in the render path.** Lists, uniform arrays and comparators are reused.
+
+### 7.3 Measured (P1, this machine, 1600×900, WebGL2)
+| Case | Result |
+|---|---|
+| 100,000 instanced cubes, static | 1 draw call, 1.2 M triangles, **≈13.9 ms/frame GPU-synced** (≈60–70 fps) |
+| 200,000 instanced cubes, static | 1 draw call, 2.4 M triangles, ≈24.4 ms/frame |
+| 100,000 cubes re-transformed on the CPU every frame | ≈32 ms/frame. **Too slow for 60 fps.** Animating that many objects belongs on the GPU (vertex-shader animation, P2/P4); CPU updates are for hundreds to a few thousand instances. |
+
+Mid-range Android numbers need a real device.
+
+### 7.4 Tests
+`public/tests/index.html` runs 26 browser tests, all passing:
+- **Camera:** orthonormal basis, **identical to the original Space maths over 100 random orbits**, project/ray round trip, clipping, follow look-ahead.
+- **Scene graph:** transform hierarchy and interpolation, scene update/destroy.
+- **Loop:** determinism, timeScale/pause, stall clamp.
+- **Input:** action edges, axes, form-field guard.
+- **Shaders:** log parsing, `ShaderError`, uniform cache.
+- **Renderer:** lit mesh and 100k instancing on **both WebGL2 and the WebGL1 fallback**, transparent ordering.
+- **Space compatibility:** the full old API, plus the Neon Rush subclass-with-custom-program pattern.
+
+### 7.5 Known limits (tracked for later phases)
+- Normals use the model matrix directly; non-uniform scale needs the inverse-transpose (Light system, P2).
+- Virtual joystick for mobile is deferred to P9 (mobile pass); touch drag and pinch work now.
+- Prime Walk still runs on `Space`; it moves to the engine (instanced, 100k+) in P8.

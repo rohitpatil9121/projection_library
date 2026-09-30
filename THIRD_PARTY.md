@@ -1,6 +1,6 @@
 # Third-party software
 
-Allowed licenses: MIT, BSD, Apache-2.0, ISC, zlib, CC0 (plus SIL OFL 1.1 for fonts, pending decision
+Allowed licenses: MIT, BSD, Apache-2.0, ISC, zlib, CC0 (plus SIL OFL 1.1 for fonts only, decision
 D3 in ARCHITECTURE.md). Every entry below was checked against its repository's LICENSE on 2026-10-01.
 
 ## In use today
@@ -9,14 +9,12 @@ D3 in ARCHITECTURE.md). Every entry below was checked against its repository's L
 |---|---|---|---|---|---|
 | express | ^5.2.1 | MIT | https://github.com/expressjs/express | Local dev server (`npm start`) | `index.js` (not deployed) |
 | dotenv | ^17.3.1 | BSD-2-Clause | https://github.com/motdotla/dotenv | Reads `PORT` for the dev server | `index.js` (not deployed) |
-
-The deployed site (`public/`) currently has **no** third-party runtime code.
+| gl-matrix | 3.4.4 | MIT | https://github.com/toji/gl-matrix | Model transforms (vec3, quat, mat3, mat4) for Transform and instancing. Camera/projection maths stay ours. | Vendored: `public/vendor/gl-matrix@3.4.4/` (ESM build + LICENSE.md), imported only via `public/engine/vendor.js` |
 
 ## Planned (to be vendored into `public/vendor/` when the phase that needs it lands)
 
 | Name | Version (pinned) | License | URL | Purpose | Phase | Wrapped by |
 |---|---|---|---|---|---|---|
-| gl-matrix | 3.4.4 | MIT | https://github.com/toji/gl-matrix | Model transforms: quaternions, mat4 for the scene graph. Camera/projection math stays ours. | P1 | `engine/Transform.js` |
 | ZzFX | 1.3.2 | MIT | https://github.com/KilledByAPixel/ZzFX | Procedural sound effects, no audio files | P4 | `engine/Audio.js` |
 | ZzFXM | 2.0.3 | MIT | https://github.com/keithclark/ZzFXM | Tiny procedural music | P4 | `engine/Audio.js` |
 | Tweakpane | 4.0.5 | MIT | https://github.com/cocopon/tweakpane | Inspector / debug sliders and presets | P3 | `engine/Debug.js` |
@@ -39,7 +37,7 @@ None yet. Every ported algorithm or shader gets a header comment with its source
 a row here. Shadertoy code is **not** used unless its author states a compatible license (the default
 Shadertoy license is CC BY-NC-SA, which is not allowed).
 
-## Fonts (pending D3)
+## Fonts (D3: OFL allowed for fonts only)
 
 | Font | License | Source | Use |
 |---|---|---|---|

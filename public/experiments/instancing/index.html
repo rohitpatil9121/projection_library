@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Instancing benchmark · Projection Lab</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #05050A; color: #E6E8F2; font: 14px/1.5 system-ui, sans-serif; overflow: hidden; }
+        canvas { display: block; width: 100%; height: 100%; }
+        .panel { position: fixed; left: 12px; top: 12px; padding: 12px 14px; border-radius: 10px; background: rgba(14, 16, 32, .85);
+                 border: 1px solid #2A2F4A; max-width: calc(100% - 48px); }
+        h1 { font-size: 15px; margin: 0 0 6px; }
+        dl { display: grid; grid-template-columns: auto auto; gap: 2px 14px; margin: 8px 0; font: 13px ui-monospace, monospace; }
+        dt { color: #8E94B2; } dd { margin: 0; text-align: right; }
+        .row { display: flex; gap: 6px; flex-wrap: wrap; }
+        button { font: inherit; min-height: 36px; padding: 6px 10px; border-radius: 8px; border: 1px solid #3A4066; background: #151A30; color: inherit; cursor: pointer; }
+        button[aria-pressed="true"] { border-color: #8B7BFF; background: #2A2260; }
+        button:focus-visible { outline: 2px solid #5BE3FF; outline-offset: 2px; }
+        p { margin: 6px 0 0; color: #8E94B2; font-size: 13px; }
+    </style>
+</head>
+<body>
+    <canvas id="view" aria-label="A field of instanced cubes"></canvas>
+    <div class="panel">
+        <h1>Instancing benchmark</h1>
+        <div class="row" role="group" aria-label="Cube count">
+            <button data-n="10000">10k</button><button data-n="50000">50k</button>
+            <button data-n="100000">100k</button><button data-n="200000">200k</button>
+        </div>
+        <div class="row" style="margin-top:6px">
+            <button id="animate" aria-pressed="false">Animate on CPU</button>
+        </div>
+        <dl>
+            <dt>FPS</dt><dd id="fps">-</dd>
+            <dt>Frame</dt><dd id="ms">-</dd>
+            <dt>Draw calls</dt><dd id="dc">-</dd>
+            <dt>Instances</dt><dd id="inst">-</dd>
+            <dt>Triangles</dt><dd id="tri">-</dd>
+            <dt>Context</dt><dd id="ctx">-</dd>
+        </dl>
+        <p>Drag to orbit · wheel / pinch to zoom. All cubes are one draw call.</p>
+    </div>
+    <script type="module">
+        import { Game, Entity, InstancedMesh, BasicMaterial, primitives } from "../../engine/index.js";
+
+        const MAX = 200000;
+        const game = new Game({ canvas: document.getElementById("view") });
+        if (!game.failed) {
+            const mesh = new InstancedMesh(primitives.box(0.8, 0.8, 0.8), new BasicMaterial({ color: [1, 1, 1] }), MAX);
+            game.add(new Entity({ name: "field", mesh }));
+
+            // lay instances out on a golden-angle disc, height from a wave; colour by radius
+            const seeds = new Float32Array(MAX * 3);
+            function layout(n) {
+                mesh.count = n;
+                const spread = Math.sqrt(n) * 0.9;
+                for (let i = 0; i < n; i++) {
+                    const r = Math.sqrt(i / n) * spread, a = i * 2.399963;
+                    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+                    seeds[i * 3] = x; seeds[i * 3 + 1] = y; seeds[i * 3 + 2] = r;
+                    mesh.setTransform(i, x, y, Math.sin(r * 0.25) * 3, 1, 1, 1, a);
+                    const t = r / spread;
+                    mesh.setColor(i, 0.35 + 0.65 * t, 0.3 + 0.4 * (1 - t), 1 - 0.5 * t, 1);
+                }
+                game.camera.distance = spread * 2.2;
+                document.querySelectorAll("[data-n]").forEach((b) => b.setAttribute("aria-pressed", String(+b.dataset.n === n)));
+            }
+            layout(100000);
+            document.querySelectorAll("[data-n]").forEach((b) => b.addEventListener("click", () => layout(+b.dataset.n)));
+
+            let animate = false;
+            const animBtn = document.getElementById("animate");
+            animBtn.addEventListener("click", () => { animate = !animate; animBtn.setAttribute("aria-pressed", String(animate)); });
+
+            game.camera.pitch = 0.6;
+            game.camera.far = 5000;
+            game.onUpdate((dt, g) => {
+                const p = g.input.pointer;
+                if (p.dragging) g.camera.orbit(-p.dx * 0.005, p.dy * 0.005);
+                else g.camera.yaw += dt * 0.05;
+                if (p.wheel) g.camera.zoom(Math.exp(p.wheel * 0.001));
+                if (p.pinch !== 1) g.camera.zoom(1 / p.pinch);
+                if (animate) {
+                    const t = g.time;
+                    for (let i = 0; i < mesh.count; i++) {
+                        const x = seeds[i * 3], y = seeds[i * 3 + 1], r = seeds[i * 3 + 2];
+                        mesh.setTransform(i, x, y, Math.sin(r * 0.25 - t * 2) * 3, 1, 1, 1, i * 2.399963 + t);
+                    }
+                }
+            });
+
+            const ui = { fps: document.getElementById("fps"), ms: document.getElementById("ms"), dc: document.getElementById("dc"),
+                inst: document.getElementById("inst"), tri: document.getElementById("tri") };
+            document.getElementById("ctx").textContent = game.renderer.caps.webgl2 ? "WebGL2" : "WebGL1";
+            let lastUi = 0;
+            game.onRender(() => {
+                const now = performance.now();
+                if (now - lastUi < 250) return; // update text 4x per second, not every frame
+                lastUi = now;
+                const s = game.renderer.stats, l = game.loop;
+                ui.fps.textContent = l.fps.toFixed(0);
+                ui.ms.textContent = l.frameMs.toFixed(1) + " ms";
+                ui.dc.textContent = s.drawCalls;
+                ui.inst.textContent = s.instances.toLocaleString();
+                ui.tri.textContent = s.triangles.toLocaleString();
+            });
+            game.start();
+            window.game = game;
+        }
+    </script>
+</body>
+</html>
