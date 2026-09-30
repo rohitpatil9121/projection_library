@@ -1,7 +1,7 @@
 import Path from "./Shapes/Path.js";
 import Point from "./Point.js";
 import Space from "./Space.js";
-import Face from "./Shapes/face.js";
+import Face from "./Shapes/Face.js";
 import Structure from "./Shapes/Structure.js";
 
 console.log("Hello World");
@@ -192,7 +192,8 @@ let bet = 0;
 let gam = 0;
 
 function isPrime(num) {
-    for (let i = 2; i < num; i++) {
+    if (num < 2) return false;
+    for (let i = 2; i * i <= num; i++) {
         if (num % i == 0) {
             return false;
         }
@@ -1412,32 +1413,32 @@ function myRegularRect() {
 //         let testPara = getTestDetPara();
 //         if (testPara[1] == 1) {
 //             for (let k = 12; k < 24; k++) {
-//                 posArr[0 + 4 * k] += testPara[0]
+//                 space.posArr[0 + 4 * k] += testPara[0]
 //             }
 //         }
 //         else if (testPara[1] == 2) {
 //             for (let k = 12; k < 24; k++) {
-//                 posArr[0 + 4 * k] -= testPara[0]
+//                 space.posArr[0 + 4 * k] -= testPara[0]
 //             }
 //         }
 //         else if (testPara[1] == 3) {
 //             for (let k = 12; k < 24; k++) {
-//                 posArr[1 + 4 * k] += testPara[0]
+//                 space.posArr[1 + 4 * k] += testPara[0]
 //             }
 //         }
 //         else if (testPara[1] == 4) {
 //             for (let k = 12; k < 24; k++) {
-//                 posArr[1 + 4 * k] -= testPara[0]
+//                 space.posArr[1 + 4 * k] -= testPara[0]
 //             }
 //         }
 //         else if (testPara[1] == 5) {
 //             for (let k = 12; k < 24; k++) {
-//                 posArr[2 + 4 * k] += testPara[0]
+//                 space.posArr[2 + 4 * k] += testPara[0]
 //             }
 //         }
 //         else if (testPara[1] == 6) {
 //             for (let k = 12; k < 24; k++) {
-//                 posArr[2 + 4 * k] -= testPara[0]
+//                 space.posArr[2 + 4 * k] -= testPara[0]
 //             }
 //         }
 
@@ -1673,7 +1674,7 @@ document.addEventListener("keypress", (event) => {
     if (event.code == "KeyT") {
         // space.incZ0();
         for (let k = 12; k < 24; k++) {
-            posArr[2 + 4 * k] += 0.1
+            space.posArr[2 + 4 * k] += 0.1
         }
 
         myRegularRect();
@@ -1681,7 +1682,7 @@ document.addEventListener("keypress", (event) => {
     if (event.code == "KeyG") {
         // space.decZ0();
         for (let k = 12; k < 24; k++) {
-            posArr[2 + 4 * k] -= 0.1
+            space.posArr[2 + 4 * k] -= 0.1
         }
 
         myRegularRect();
@@ -1689,7 +1690,7 @@ document.addEventListener("keypress", (event) => {
     if (event.code == "KeyH") {
         // space.incX0();
         for (let k = 12; k < 24; k++) {
-            posArr[0 + 4 * k] += 0.1
+            space.posArr[0 + 4 * k] += 0.1
         }
 
         myRegularRect();
@@ -1697,7 +1698,7 @@ document.addEventListener("keypress", (event) => {
     if (event.code == "KeyF") {
         // space.decX0();
         for (let k = 12; k < 24; k++) {
-            posArr[0 + 4 * k] -= 0.1
+            space.posArr[0 + 4 * k] -= 0.1
         }
 
         myRegularRect();
@@ -1705,7 +1706,7 @@ document.addEventListener("keypress", (event) => {
     if (event.code == "KeyB") {
         // space.decX0();
         for (let k = 12; k < 24; k++) {
-            posArr[1 + 4 * k] += 0.1
+            space.posArr[1 + 4 * k] += 0.1
         }
 
         myRegularRect();
@@ -1713,7 +1714,7 @@ document.addEventListener("keypress", (event) => {
     if (event.code == "KeyN") {
         // space.decX0();
         for (let k = 12; k < 24; k++) {
-            posArr[1 + 4 * k] -= 0.1
+            space.posArr[1 + 4 * k] -= 0.1
         }
 
         myRegularRect();
@@ -1755,25 +1756,20 @@ document.addEventListener("mousemove", (event) => {
 
 // for mobile
 document.addEventListener("touchstart", (event) => {
-    console.log("touch entered ")
-    idealX = event.x;
-    idealY = event.y;
+    idealX = event.touches[0].clientX;
+    idealY = event.touches[0].clientY;
     play = true;
 })
 document.addEventListener("touchend", (event) => {
-    console.log("touch ended ")
     play = false;
     sudoAlp = space.alpha;
     sudoBet = space.beta;
 })
 document.addEventListener("touchmove", (event) => {
-    console.log("touch rendered ");
-    console.log(play);
     if (play) {
-
-        space.alpha = sudoAlp + (event.x - idealX) / 500;
-        console.log(event.view.outerHeight + "," + event.view.outerWidth);
-        space.beta = sudoBet - (event.y - idealY) / 500;
+        const touch = event.touches[0];
+        space.alpha = sudoAlp + (touch.clientX - idealX) / 500;
+        space.beta = sudoBet - (touch.clientY - idealY) / 500;
         fun();
 
     }

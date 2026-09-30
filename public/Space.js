@@ -1,6 +1,6 @@
 import Point from "./Point.js";
 import Path from "./Shapes/Path.js";
-import Face from "./Shapes/face.js";
+import Face from "./Shapes/Face.js";
 
 export default class Space {
 
@@ -313,9 +313,6 @@ export default class Space {
     }
 
     moveStructure(structure, dx, dy, dz) {
-        console.log(structure);
-        console.log(this.posArr);
-        console.log(structure.startVertId + "," + structure.endVertId);
         for (let i = structure.startVertId; i < structure.endVertId; i++) {
             this.posArr[0 + 4 * i] += dx;
             this.posArr[1 + 4 * i] += dy;

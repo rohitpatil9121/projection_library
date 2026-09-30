@@ -7,6 +7,7 @@ app.use(express.static("public"));
 
 
 
-app.listen(process.env.PORT || 9600,()=>{
-    console.log("listending on http://localhost:9600/")
-})
+const port = process.env.PORT || 9600;
+app.listen(port, () => {
+    console.log(`listening on http://localhost:${port}/`);
+});

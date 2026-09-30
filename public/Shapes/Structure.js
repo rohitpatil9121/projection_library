@@ -41,7 +41,7 @@ export default class Structure {
     }
     move(dx,dy,dz){
         this.minX+=dx;
-        this.maxX+=dy;
+        this.maxX+=dx;
 
         this.minY+=dy;
         this.maxY+=dy;
