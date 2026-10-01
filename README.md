@@ -13,7 +13,8 @@
 
 <h2>🚀 Overview</h2>
 <p><b>🎮 Built with this engine: <a href="https://github.com/rohitpatil9121/neon-rush">Neon Rush</a></b>, a synthwave runner with 5 levels, power-ups and custom GLSL shaders. <a href="https://rohitpatil9121.github.io/neon-rush/">Play it here</a>.</p>
-<p><b>New:</b> a light system (sun shadows, point lights, ambient occlusion), textures, a glTF loader and skeletal animation. See <code>public/examples/lit-scene.html</code> and <a href="ARCHITECTURE.md">ARCHITECTURE.md §8</a>. The Night Market game is built on them.</p>
+<p><b>🏮 Also built with it: <a href="https://github.com/rohitpatil9121/night-market">Night Market</a></b>, a street-food tycoon with animated characters, sun shadows and models generated from code. <a href="https://rohitpatil9121.github.io/night-market/">Play it here</a>.</p>
+<p><b>New:</b> a light system (sun shadows, point lights, ambient occlusion), textures, a glTF loader and skeletal animation. See <code>public/examples/lit-scene.html</code> and <a href="ARCHITECTURE.md">ARCHITECTURE.md §8</a>. <a href="https://rohitpatil9121.github.io/night-market/">Night Market</a> is built on them.</p>
 <p>No three.js, no matrix library. <code>Space.js</code> places a camera on a sphere around a view point, builds the camera's
 x/y/z axes itself, and projects every vertex in the vertex shader with dot products. Two demos ship with it:</p>
 <ul>
@@ -64,7 +65,7 @@ x/y/z axes itself, and projects every vertex in the vertex shader with dot produ
 cd projection_library
 npm install
 npm start</pre>
-<p><b>Live demo:</b> <a href="https://rohitpatil9121.github.io/projection_library/">Prime Walk 3D</a> · <a href="https://rohitpatil9121.github.io/neon-rush/">Neon Rush ↗</a> · <a href="https://rohitpatil9121.github.io/projection_library/preview.html">OBJ Preview</a></p>
+<p><b>Live demo:</b> <a href="https://rohitpatil9121.github.io/projection_library/">Prime Walk 3D</a> · <a href="https://rohitpatil9121.github.io/neon-rush/">Neon Rush ↗</a> · <a href="https://rohitpatil9121.github.io/night-market/">Night Market ↗</a> · <a href="https://rohitpatil9121.github.io/projection_library/preview.html">OBJ Preview</a></p>
 <p>Open <code>http://localhost:9600</code> (or set <code>PORT</code>). The OBJ viewer is at <code>/preview.html</code>.</p>
 
 <hr>

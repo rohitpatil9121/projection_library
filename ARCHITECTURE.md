@@ -264,7 +264,7 @@ here is optional: a scene that sets none of it renders exactly as before.
 |---|---|
 | `shaders/chunks/lighting.js` | GLSL chunk: hemisphere ambient, sun with shadow lookup (3×3 PCF), up to 16 point lights, fog. `labLight()`, `labShadow()`, `labPoints()`, `labFog()`. Any ShaderMaterial can include it. |
 | `engine/Material.js` → `StandardMaterial` | The fully lit surface: texture, vertex colours, colour palette, specular, rim, alpha test. Variants for instancing and skinning. |
-| `engine/ShadowMap.js` | Orthographic depth pass from the sun into a depth texture; the Renderer runs it before the main pass. |
+| `engine/ShadowMap.js` | Orthographic depth pass from the sun into a depth texture; the Renderer runs it before the main pass. Optionally keeps the depth of `staticShadow` entities between frames (`cache: true`, WebGL2). |
 | `engine/Texture.js` | Images, canvases, ImageBitmaps or raw bytes; uploaded lazily per context. |
 | `engine/Animation.js` | `Skeleton`, `AnimationClip`, `Animator` (sampling, cross-fades, joint matrices). Joints are typed arrays, not Entities. |
 | `engine/Mesh.js` → `SkinnedMesh` | A mesh bent by an Animator. `mesh.uniforms` lets meshes share a material and differ per mesh. |
@@ -305,13 +305,18 @@ flowchart LR
 ### 8.4 Tests
 `public/tests/lighting.test.js` adds 7 browser tests (40 in total, all passing): `Geometry.merge`, Animator
 maths and cross-fades, parsing a hand-built `.glb` (colours, material, skin reordering, animation), a floor
-that goes dark under a slab and lights up again with shadows off, a point light alone, and a skinned mesh
-with shadows and SSAO on both WebGL2 and the WebGL1 fallback.
+that goes dark under a slab and lights up again with shadows off (and the same with the slab's shadow kept
+by the static cache, then moved), a point light alone, and a skinned mesh with shadows and SSAO on both
+WebGL2 and the WebGL1 fallback.
 
 ### 8.5 Known limits
 - One skin per glTF file; no morph targets, sparse accessors or compression extensions.
 - 32 joints per skeleton (a `mat4` uniform array); some WebGL1 devices have too few vertex uniforms for that.
 - One shadow-casting light (the sun), one shadow map, no cascades: keep `ShadowMap.extent` tight.
+- The static shadow cache is off by default. It was built to save redrawing NIGHT MARKET's street from the
+  sun every frame, and measuring showed it doesn't: on an Intel UHD the street's 150,000 triangles cost about
+  0.5 ms in the depth pass, while copying the kept depth into a 2048² map cost about 0.9 ms (a framebuffer
+  blit was far worse, around 9 ms). It should pay off only where the static casters are much heavier.
 - SSAO is not depth-aware when it blurs, so thin objects get a faint halo.
 - Instanced meshes still shade with the model matrix (correct for uniform scale and for boxes); non-instanced
   meshes now use the inverse-transpose normal matrix, which closes the limit noted in §7.5.
