@@ -279,7 +279,7 @@ flowchart LR
   A[world matrices] --> B[collect opaque / transparent]
   B --> C[shadow pass\nsun's depth texture]
   C --> D[HDR target + depth texture]
-  D --> E[opaque, then sky-aware transparent]
+  D --> E[sky, opaque, transparent]
   E --> F[SSAO ½ res + blur]
   F --> G[bloom → composite × AO → tonemap]
   G --> H[screen]
