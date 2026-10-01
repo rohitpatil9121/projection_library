@@ -1,6 +1,6 @@
 # Architecture
 
-> Status: **P1 (core engine) done.** §1 is the P0 audit; §7 describes the engine as built in P1.
+> Status: **P1 (core engine) done; light system, models and animation added (§8).** §1 is the P0 audit; §7 describes the engine as built in P1.
 > Sections marked *Target* are plans, not code. They get updated phase by phase.
 
 ## 1. What exists today (audited P0)
@@ -252,3 +252,66 @@ Mid-range Android numbers need a real device.
 - Normals use the model matrix directly; non-uniform scale needs the inverse-transpose (Light system, P2).
 - Virtual joystick for mobile is deferred to P9 (mobile pass); touch drag and pinch work now.
 - Prime Walk still runs on `Space`; it moves to the engine (instanced, 100k+) in P8.
+
+## 8. Light system, textures, models and animation
+
+Added while building NIGHT MARKET, which needed a lit street with shadows and animated people. Everything
+here is optional: a scene that sets none of it renders exactly as before.
+
+### 8.1 Modules
+
+| Module | Responsibility |
+|---|---|
+| `shaders/chunks/lighting.js` | GLSL chunk: hemisphere ambient, sun with shadow lookup (3×3 PCF), up to 16 point lights, fog. `labLight()`, `labShadow()`, `labPoints()`, `labFog()`. Any ShaderMaterial can include it. |
+| `engine/Material.js` → `StandardMaterial` | The fully lit surface: texture, vertex colours, colour palette, specular, rim, alpha test. Variants for instancing and skinning. |
+| `engine/ShadowMap.js` | Orthographic depth pass from the sun into a depth texture; the Renderer runs it before the main pass. |
+| `engine/Texture.js` | Images, canvases, ImageBitmaps or raw bytes; uploaded lazily per context. |
+| `engine/Animation.js` | `Skeleton`, `AnimationClip`, `Animator` (sampling, cross-fades, joint matrices). Joints are typed arrays, not Entities. |
+| `engine/Mesh.js` → `SkinnedMesh` | A mesh bent by an Animator. `mesh.uniforms` lets meshes share a material and differ per mesh. |
+| `engine/loaders/GLTF.js` | `.glb` / `.gltf`: meshes, materials, textures, node tree, one skin, animations. |
+| `engine/PostFX.js` | Optional screen-space ambient occlusion from a depth texture (`settings.ao`). |
+| `engine/Geometry.js` | `joints` / `weights` attributes; `Geometry.merge()` joins many placed parts into one mesh. |
+
+### 8.2 Frame
+
+```mermaid
+flowchart LR
+  A[world matrices] --> B[collect opaque / transparent]
+  B --> C[shadow pass\nsun's depth texture]
+  C --> D[HDR target + depth texture]
+  D --> E[opaque, then sky-aware transparent]
+  E --> F[SSAO ½ res + blur]
+  F --> G[bloom → composite × AO → tonemap]
+  G --> H[screen]
+```
+
+### 8.3 Key decisions
+- **The projection stays ours.** The main pass still uses `projectLab()`. Only the shadow pass uses a
+  matrix (the sun has no perspective, so there is nothing of the dot-product projection to preserve there).
+- **Lights are uniform arrays, not a deferred pass.** 16 point lights evaluated per fragment is cheap at
+  this scale and keeps one forward pass. `Scene.pointLights` is a plain array; the Renderer packs it once
+  per frame and sets it on every program that declares the uniforms.
+- **Shadows need no opt-in per material.** A program that includes the lighting chunk always has a shadow
+  sampler; with no ShadowMap the Renderer binds a 1×1 white texture and strength 0.
+- **Self-illumination rides in vertex alpha** (1 = ordinary, 2 = fully self-lit), so signs and lanterns can
+  be merged into the same static mesh as the walls around them.
+- **Palettes instead of materials per character.** A vertex stores an index; the colour table is a per-mesh
+  uniform. A crowd is one program and one material.
+- **Skeletons are data.** A character is an Animator (a pose buffer) plus shared clips, so 70 characters
+  cost 70 small typed arrays and 70 draw calls, with no scene-graph nodes for bones.
+- **GLSL ES 1.00 still, everywhere.** Depth textures and derivatives-free SSAO keep one shader source for
+  WebGL2 and the WebGL1 fallback. Without a depth-texture extension, shadows and SSAO switch themselves off.
+
+### 8.4 Tests
+`public/tests/lighting.test.js` adds 7 browser tests (40 in total, all passing): `Geometry.merge`, Animator
+maths and cross-fades, parsing a hand-built `.glb` (colours, material, skin reordering, animation), a floor
+that goes dark under a slab and lights up again with shadows off, a point light alone, and a skinned mesh
+with shadows and SSAO on both WebGL2 and the WebGL1 fallback.
+
+### 8.5 Known limits
+- One skin per glTF file; no morph targets, sparse accessors or compression extensions.
+- 32 joints per skeleton (a `mat4` uniform array); some WebGL1 devices have too few vertex uniforms for that.
+- One shadow-casting light (the sun), one shadow map, no cascades: keep `ShadowMap.extent` tight.
+- SSAO is not depth-aware when it blurs, so thin objects get a faint halo.
+- Instanced meshes still shade with the model matrix (correct for uniform scale and for boxes); non-instanced
+  meshes now use the inverse-transpose normal matrix, which closes the limit noted in §7.5.

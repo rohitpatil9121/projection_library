@@ -13,6 +13,7 @@
 
 <h2>🚀 Overview</h2>
 <p><b>🎮 Built with this engine: <a href="https://github.com/rohitpatil9121/neon-rush">Neon Rush</a></b>, a synthwave runner with 5 levels, power-ups and custom GLSL shaders. <a href="https://rohitpatil9121.github.io/neon-rush/">Play it here</a>.</p>
+<p><b>New:</b> a light system (sun shadows, point lights, ambient occlusion), textures, a glTF loader and skeletal animation. See <code>public/examples/lit-scene.html</code> and <a href="ARCHITECTURE.md">ARCHITECTURE.md §8</a>. <a href="https://github.com/rohitpatil9121/night-market">Night Market</a> is built on them.</p>
 <p>No three.js, no matrix library. <code>Space.js</code> places a camera on a sphere around a view point, builds the camera's
 x/y/z axes itself, and projects every vertex in the vertex shader with dot products. Two demos ship with it:</p>
 <ul>
