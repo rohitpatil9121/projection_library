@@ -9,11 +9,18 @@ export class Scene {
     constructor() {
         this.root = new Entity({ name: "root" });
         this.clearColor = Float32Array.from(RENDER.clearColor);
-        /** simple directional light + hemisphere ambient until the Light system (P2) */
+        /** one directional sun + a hemisphere ambient (sky colour from above, ground colour from below) */
         this.sunDirection = Float32Array.from(normalize(RENDER.sunDirection));
         this.sunColor = Float32Array.from(RENDER.sunColor);
         this.skyColor = Float32Array.from(RENDER.skyColor);
         this.groundColor = Float32Array.from(RENDER.groundColor);
+        /** distance fog read by StandardMaterial and the lighting chunk; density 0 turns it off */
+        this.fogColor = Float32Array.from(RENDER.fogColor);
+        this.fogDensity = RENDER.fogDensity;
+        /** @type {Array<{ position: ArrayLike<number>, color: ArrayLike<number>, radius: number, enabled?: boolean }>} */
+        this.pointLights = [];
+        /** @type {import("./ShadowMap.js").ShadowMap | null} shadows cast by the sun */
+        this.shadow = null;
     }
 
     /** @param {Entity} entity @param {Entity} [parent] */

@@ -4,6 +4,7 @@ import { ATTRIB } from "./config.js";
  * Vertex data + its GPU buffers.
  *
  * Attributes are typed arrays (positions and normals: 3 floats, uvs: 2, colors: 4). Indices are optional.
+ * Skinned geometry also carries joints and weights (4 floats each: which joints move a vertex, and how much).
  * Buffers are created lazily on first use by a Renderer, per GL context, and uploaded once. Call
  * `markDirty()` after editing arrays in place to re-upload.
  * @module engine/Geometry
@@ -11,6 +12,7 @@ import { ATTRIB } from "./config.js";
 export class Geometry {
     /**
      * @param {{ positions: Float32Array, normals?: Float32Array, uvs?: Float32Array, colors?: Float32Array,
+     *           joints?: Float32Array, weights?: Float32Array,
      *           indices?: Uint16Array | Uint32Array, mode?: "triangles" | "lines" | "lineStrip" | "points",
      *           dynamic?: boolean, name?: string }} data
      *        dynamic: the arrays are rewritten often (particles, trails); uses DYNAMIC_DRAW and bufferSubData.
@@ -21,6 +23,8 @@ export class Geometry {
         this.normals = data.normals || null;
         this.uvs = data.uvs || null;
         this.colors = data.colors || null;
+        this.joints = data.joints || null;
+        this.weights = data.weights || null;
         this.indices = data.indices || null;
         /** @type {"triangles" | "lines" | "lineStrip" | "points"} */
         this.mode = data.mode || "triangles";
@@ -78,6 +82,10 @@ export class Geometry {
         attr("normal", this.normals, 3, ATTRIB.normal);
         attr("uv", this.uvs, 2, ATTRIB.uv);
         attr("color", this.colors, 4, ATTRIB.color);
+        if (this.joints || this.weights) {
+            attr("joints", this.joints, 4, ATTRIB.joints);
+            attr("weights", this.weights, 4, ATTRIB.weights);
+        }
         if (this.indices) {
             if (!g.index) g.index = gl.createBuffer();
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.index);
@@ -85,6 +93,55 @@ export class Geometry {
             this.indexType = this.indices instanceof Uint32Array ? gl.UNSIGNED_INT : gl.UNSIGNED_SHORT;
         }
         g.version = this.version;
+    }
+
+    /**
+     * Join several geometries into one, so a whole static scene is a single draw call (and a single shadow
+     * draw). Each part may carry a model matrix and a colour: the colour multiplies the part's own vertex
+     * colours (or becomes its colour if it has none; alpha defaults to 1).
+     * Parts must be triangle lists. Normals are transformed with the matrix (uniform scale assumed).
+     * @param {Array<{ geometry: Geometry, matrix?: ArrayLike<number>, color?: ArrayLike<number> }>} parts
+     * @param {{ name?: string, uvs?: boolean, skin?: boolean }} [options] skin: keep joints and weights
+     */
+    static merge(parts, options = {}) {
+        let vertices = 0, indexCount = 0;
+        for (const p of parts) { vertices += p.geometry.vertexCount; indexCount += p.geometry.indices ? p.geometry.indices.length : p.geometry.vertexCount; }
+        const positions = new Float32Array(vertices * 3), normals = new Float32Array(vertices * 3), colors = new Float32Array(vertices * 4);
+        const wantUV = options.uvs ?? parts.some((p) => p.geometry.uvs), uvs = wantUV ? new Float32Array(vertices * 2) : null;
+        const joints = options.skin ? new Float32Array(vertices * 4) : null, weights = options.skin ? new Float32Array(vertices * 4) : null;
+        const indices = indexArray(new Array(indexCount), vertices);
+        let v = 0, k = 0;
+        for (const part of parts) {
+            const g = part.geometry, m = part.matrix, c = part.color, n = g.vertexCount;
+            const P = g.positions, N = g.normals;
+            for (let i = 0; i < n; i++) {
+                const x = P[i * 3], y = P[i * 3 + 1], z = P[i * 3 + 2], o = (v + i) * 3;
+                if (m) {
+                    positions[o] = m[0] * x + m[4] * y + m[8] * z + m[12];
+                    positions[o + 1] = m[1] * x + m[5] * y + m[9] * z + m[13];
+                    positions[o + 2] = m[2] * x + m[6] * y + m[10] * z + m[14];
+                } else { positions[o] = x; positions[o + 1] = y; positions[o + 2] = z; }
+                if (N) {
+                    let nx = N[i * 3], ny = N[i * 3 + 1], nz = N[i * 3 + 2];
+                    if (m) {
+                        const a = m[0] * nx + m[4] * ny + m[8] * nz, b = m[1] * nx + m[5] * ny + m[9] * nz, d = m[2] * nx + m[6] * ny + m[10] * nz;
+                        const l = Math.hypot(a, b, d) || 1;
+                        nx = a / l; ny = b / l; nz = d / l;
+                    }
+                    normals[o] = nx; normals[o + 1] = ny; normals[o + 2] = nz;
+                }
+                const q = (v + i) * 4;
+                if (g.colors) { colors[q] = g.colors[i * 4]; colors[q + 1] = g.colors[i * 4 + 1]; colors[q + 2] = g.colors[i * 4 + 2]; colors[q + 3] = g.colors[i * 4 + 3]; }
+                else { colors[q] = colors[q + 1] = colors[q + 2] = 1; colors[q + 3] = 1; }
+                if (c) { colors[q] *= c[0]; colors[q + 1] *= c[1]; colors[q + 2] *= c[2]; if (c.length > 3) colors[q + 3] *= c[3]; }
+            }
+            if (uvs && g.uvs) uvs.set(g.uvs, v * 2);
+            if (joints && g.joints) { joints.set(g.joints, v * 4); weights.set(g.weights, v * 4); }
+            if (g.indices) for (let i = 0; i < g.indices.length; i++) indices[k++] = g.indices[i] + v;
+            else for (let i = 0; i < n; i++) indices[k++] = v + i;
+            v += n;
+        }
+        return new Geometry({ name: options.name || "merged", positions, normals, colors, uvs, joints, weights, indices });
     }
 
     /** @param {WebGLRenderingContext | WebGL2RenderingContext} gl */

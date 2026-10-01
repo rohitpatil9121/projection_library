@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Lit scene · Projection Lab</title>
+    <style>
+        html, body { margin: 0; height: 100%; background: #0b0d16; color: #e6e8f2; font: 14px/1.5 system-ui, sans-serif; }
+        canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+        #panel { position: fixed; left: 12px; top: 12px; padding: 10px 14px; border-radius: 12px; background: rgba(10, 12, 24, 0.75); border: 1px solid rgba(160, 185, 255, 0.2); }
+        #panel label { display: block; cursor: pointer; }
+        #stats { font: 12px ui-monospace, monospace; color: #9aa6cf; margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <canvas id="view" aria-label="Boxes and spheres on a floor, lit by a sun that casts shadows and two coloured lamps; a striped column bends from side to side"></canvas>
+    <div id="panel">
+        <label><input type="checkbox" id="shadows" checked> Sun shadows</label>
+        <label><input type="checkbox" id="ao" checked> Ambient occlusion</label>
+        <label><input type="checkbox" id="lamps" checked> Point lights</label>
+        <div id="stats"></div>
+    </div>
+    <script type="module">
+        // StandardMaterial with the whole light system: sun + shadow map, point lights, fog, ambient occlusion,
+        // a texture drawn on a 2D canvas, and a skinned mesh bent by a three-joint skeleton.
+        import { Game, Entity, Mesh, SkinnedMesh, Geometry, StandardMaterial, Texture, ShadowMap, PostFX,
+            Skeleton, AnimationClip, Animator, PATH, primitives } from "../engine/index.js";
+
+        const game = new Game({ canvas: document.getElementById("view"), antialias: false });
+        const { scene, camera, renderer } = game;
+        renderer.postfx = new PostFX(renderer, { ao: { enabled: true }, bloom: { threshold: 1.1, intensity: 0.6 }, vignette: 0.3 });
+        scene.clearColor.set([0.55, 0.72, 0.95, 1]);
+        scene.sunDirection.set([0.45, -0.5, 0.74]);
+        scene.sunColor.set([1.0, 0.94, 0.82]);
+        scene.skyColor.set([0.3, 0.36, 0.5]);
+        scene.groundColor.set([0.22, 0.2, 0.18]);
+        scene.fogColor.set([0.55, 0.72, 0.95]); scene.fogDensity = 0.004;
+        scene.shadow = new ShadowMap({ center: [0, 0, 0], extent: [14, 14], depth: 60, size: 2048 });
+        scene.pointLights.push({ position: [-4, -3, 1.6], color: [2.2, 0.5, 0.9], radius: 7 }, { position: [5, 2, 1.6], color: [0.3, 1.2, 2.2], radius: 7 });
+
+        game.add(new Entity({ mesh: new Mesh(primitives.plane(40, 40), new StandardMaterial({ color: [0.62, 0.66, 0.6] })) }));
+        const add = (geometry, material, x, y, z) => { const e = game.add(new Entity({ mesh: new Mesh(geometry, material) })); e.setPosition(x, y, z); return e; };
+        add(primitives.box(2, 2, 2), new StandardMaterial({ color: [0.95, 0.45, 0.3] }), -3, 1, 1);
+        add(primitives.sphere(1, 32, 20), new StandardMaterial({ color: [0.35, 0.6, 0.95], specular: 0.6, shininess: 40 }), 2.5, -1, 1);
+        add(primitives.cylinder(0.6, 0.6, 3, 24), new StandardMaterial({ color: [0.95, 0.85, 0.4] }), 0, 4, 1.5);
+        add(primitives.torus(1.1, 0.35, 16, 40), new StandardMaterial({ color: [0.6, 0.9, 0.5] }), -1, -4, 0.36);
+        const lamp = add(primitives.sphere(0.2, 12, 8), new StandardMaterial({ lit: false, color: [3, 0.7, 1.3], castShadow: false }), -4, -3, 1.6);
+        add(primitives.sphere(0.2, 12, 8), new StandardMaterial({ lit: false, color: [0.5, 1.7, 3], castShadow: false }), 5, 2, 1.6);
+
+        // a texture drawn with the 2D canvas API
+        const cv = document.createElement("canvas"); cv.width = cv.height = 256;
+        const g = cv.getContext("2d");
+        g.fillStyle = "#f6e9d2"; g.fillRect(0, 0, 256, 256);
+        g.fillStyle = "#c2412d"; for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) if ((i + j) % 2) g.fillRect(i * 32, j * 32, 32, 32);
+        g.fillStyle = "#1b1f33"; g.font = "bold 56px system-ui"; g.textAlign = "center"; g.fillText("LAB", 128, 148);
+        const crate = add(primitives.box(1.6, 1.6, 1.6), new StandardMaterial({ map: new Texture({ source: cv }) }), 4.5, -4.5, 0.8);
+
+        // a skinned column: three joints stacked up Z; each ring of vertices follows the two joints around it
+        const SEG = 24, RINGS = 13, H = 4, pos = [], nrm = [], col = [], jnt = [], wgt = [], idx = [];
+        for (let r = 0; r < RINGS; r++) for (let s = 0; s <= SEG; s++) {
+            const a = (s / SEG) * Math.PI * 2, z = (r / (RINGS - 1)) * H, f = z / (H / 2);        // f: 0..2 along the joints
+            const j0 = Math.min(1, Math.floor(f)), w1 = Math.min(1, Math.max(0, f - j0));
+            pos.push(Math.cos(a) * 0.45, Math.sin(a) * 0.45, z); nrm.push(Math.cos(a), Math.sin(a), 0);
+            const stripe = r % 2 ? [0.95, 0.95, 0.9, 1] : [0.85, 0.3, 0.55, 1]; col.push(...stripe);
+            jnt.push(j0, j0 + 1, 0, 0); wgt.push(1 - w1, w1, 0, 0);
+        }
+        for (let r = 0; r < RINGS - 1; r++) for (let s = 0; s < SEG; s++) { const a = r * (SEG + 1) + s, b = a + SEG + 1; idx.push(a, a + 1, b + 1, a, b + 1, b); }
+        const column = new Geometry({ positions: new Float32Array(pos), normals: new Float32Array(nrm), colors: new Float32Array(col), joints: new Float32Array(jnt), weights: new Float32Array(wgt), indices: new Uint16Array(idx) });
+        const rest = new Float32Array([0, 0, 0, 0, 0, 0, 1, 1, 1, 1, /**/ 0, 0, 2, 0, 0, 0, 1, 1, 1, 1, /**/ 0, 0, 2, 0, 0, 0, 1, 1, 1, 1]);
+        const inverseBind = new Float32Array(48);
+        [0, 2, 4].forEach((z, i) => { inverseBind.set([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -z, 1], i * 16); });
+        const skeleton = new Skeleton({ names: ["base", "middle", "top"], parents: [-1, 0, 1], rest, inverseBind });
+        const qx = (a) => [Math.sin(a / 2), 0, 0, Math.cos(a / 2)];
+        const sway = new AnimationClip("sway", [1, 2].map((joint) => ({ joint, path: PATH.rotation, times: new Float32Array([0, 1, 2, 3, 4]), values: new Float32Array([...qx(0), ...qx(0.55), ...qx(0), ...qx(-0.55), ...qx(0)]) })));
+        const animator = new Animator(skeleton, [sway]).play("sway");
+        const worm = game.add(new Entity({ mesh: new SkinnedMesh(column, new StandardMaterial({ vertexColors: true }), animator) }));
+        worm.setPosition(-5.5, 3.5, 0);
+
+        camera.distance = 22; camera.pitch = 0.5; camera.target.set([0, 0, 1]);
+        const input = game.input;
+        game.onUpdate((dt) => {
+            const p = input.pointer;
+            if (p.dragging) camera.orbit(-p.dx * 0.006, p.dy * 0.006);
+            if (p.wheel) camera.zoom(Math.exp(p.wheel * 0.001));
+            crate.setYaw(game.time * 0.5);
+            lamp.setPosition(-4 + Math.cos(game.time) * 2, -3 + Math.sin(game.time) * 2, 1.6);
+            scene.pointLights[0].position = [lamp.position[0], lamp.position[1], 1.6];
+        });
+        const stats = document.getElementById("stats");
+        game.onRender((dt) => {
+            animator.update(dt);
+            scene.shadow.enabled = document.getElementById("shadows").checked;
+            renderer.postfx.settings.ao.enabled = document.getElementById("ao").checked;
+            const on = document.getElementById("lamps").checked;
+            for (const l of scene.pointLights) l.enabled = on;
+            const s = renderer.stats;
+            stats.textContent = `${s.drawCalls} draws + ${s.shadowCalls} shadow · ${Math.round(game.loop.fps)} fps`;
+        });
+        game.start();
+        window.lab = { game, scene, renderer, animator };
+    </script>
+</body>
+</html>

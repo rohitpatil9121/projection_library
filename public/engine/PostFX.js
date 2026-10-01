@@ -5,7 +5,8 @@ import * as post from "../shaders/postprocessing/post.js";
 /**
  * PostFX: renders the scene into an HDR target, then applies bloom and a final composite to the screen.
  *
- *   scene ──► [HDR target]
+ *   scene ──► [HDR target + depth texture]
+ *               ├─► ambient occlusion ½ (from depth) ─► blur ─► ao      (optional, settings.ao)
  *               ├─► bright pass ½ ─► blur ─► mip0 ─► ¼ ─► blur ─► mip1 ─► ⅛ ─► blur ─► mip2
  *               └──────────────────────────────── composite (+ mips, exposure, ACES, vignette, grain, AA) ─► screen
  *
@@ -18,10 +19,13 @@ import * as post from "../shaders/postprocessing/post.js";
  */
 
 /** @typedef {{ enabled: boolean, threshold: number, knee: number, intensity: number, radius: number }} BloomSettings */
+/** @typedef {{ enabled: boolean, radius: number, intensity: number, bias: number }} AOSettings radius and bias in world units */
 
 export const POSTFX_DEFAULTS = Object.freeze({
     enabled: true,
     bloom: { enabled: true, threshold: 0.9, knee: 0.4, intensity: 1.0, radius: 1.0 },
+    /** ambient occlusion: off by default, so existing scenes look as they did */
+    ao: { enabled: false, radius: 0.7, intensity: 0.85, bias: 0.04 },
     exposure: 1.0,
     tonemap: true,
     vignette: 0.25,
@@ -33,14 +37,16 @@ export const POSTFX_DEFAULTS = Object.freeze({
 export class PostFX {
     /**
      * @param {import("./Renderer.js").Renderer} renderer
-     * @param {Partial<typeof POSTFX_DEFAULTS> & { bloom?: Partial<BloomSettings> }} [settings]
+     * @param {Partial<typeof POSTFX_DEFAULTS> & { bloom?: Partial<BloomSettings>, ao?: Partial<AOSettings> }} [settings]
      */
     constructor(renderer, settings = {}) {
         this.renderer = renderer;
         const gl = (this.gl = renderer.gl);
-        this.settings = { ...POSTFX_DEFAULTS, ...settings, bloom: { ...POSTFX_DEFAULTS.bloom, ...(settings.bloom || {}) } };
+        this.settings = { ...POSTFX_DEFAULTS, ...settings, bloom: { ...POSTFX_DEFAULTS.bloom, ...(settings.bloom || {}) }, ao: { ...POSTFX_DEFAULTS.ao, ...(settings.ao || {}) } };
 
-        this.scene = new RenderTarget(gl, { float: true, depth: true });
+        this.scene = new RenderTarget(gl, { float: true, depth: true, depthTexture: true });
+        this.ao = new RenderTarget(gl);
+        this.aoTemp = new RenderTarget(gl);
         this.mips = [0, 1, 2].map(() => new RenderTarget(gl, { float: true }));
         this.temps = [0, 1, 2].map(() => new RenderTarget(gl, { float: true }));
 
@@ -50,6 +56,8 @@ export class PostFX {
             down: P("down", post.downsampleFragment),
             blur: P("blur", post.blurFragment),
             composite: P("composite", post.compositeFragment),
+            ssao: P("ssao", post.ssaoFragment),
+            ssaoBlur: P("ssao-blur", post.ssaoBlurFragment),
         };
 
         // full-screen triangle in its own VAO (attribute slot 0)
@@ -68,6 +76,9 @@ export class PostFX {
         this.passes = 0;
     }
 
+    /** true when ambient occlusion can run here (it needs a readable depth texture) */
+    get aoSupported() { return !!this.scene.depthTexture; }
+
     /** true when the scene target is HDR (half-float) */
     get hdr() { return this.scene.isFloat; }
 
@@ -80,6 +91,7 @@ export class PostFX {
             this.mips[i].resize(w, h);
             this.temps[i].resize(w, h);
         }
+        if (this.settings.ao.enabled) { this.ao.resize(width >> 1, height >> 1); this.aoTemp.resize(width >> 1, height >> 1); }
         this.scene.bind();
     }
 
@@ -109,8 +121,12 @@ export class PostFX {
         this._pass(p, rt, tmp);
     }
 
-    /** Run bloom + composite to the screen. Called by the Renderer after the scene. */
-    end(time = 0) {
+    /**
+     * Run ambient occlusion, bloom and the composite to the screen. Called by the Renderer after the scene.
+     * @param {number} [time]
+     * @param {Record<string, Float32Array> | null} [cam] camera uniforms (ambient occlusion needs u_proj)
+     */
+    end(time = 0, cam = null) {
         const gl = this.gl, s = this.settings, b = s.bloom;
         this.passes = 0;
         gl.bindVertexArray(this.vao);
@@ -118,6 +134,24 @@ export class PostFX {
         gl.disable(gl.BLEND);
         gl.disable(gl.CULL_FACE);
         gl.depthMask(false);
+
+        const ao = s.ao.enabled && cam && this.scene.depthTexture && this.ao.framebuffer;
+        if (ao) {
+            const p = this.programs.ssao;
+            this.ao.bind();
+            p.use();
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, this.scene.depthTexture);
+            p.set("u_depth", 0);
+            p.set("u_proj", cam.u_proj);
+            this._texel[0] = 1 / this.scene.width; this._texel[1] = 1 / this.scene.height;
+            p.set("u_texel", this._texel);
+            p.set("u_radius", s.ao.radius);
+            p.set("u_bias", s.ao.bias);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+            this.passes++;
+            this._pass(this.programs.ssaoBlur, this.aoTemp, this.ao);
+        }
 
         if (b.enabled) {
             const bp = this.programs.bright;
@@ -137,6 +171,9 @@ export class PostFX {
         bind(1, this.mips[0], "u_bloom0");
         bind(2, this.mips[1], "u_bloom1");
         bind(3, this.mips[2], "u_bloom2");
+        // the sampler needs a texture even when occlusion is off; the scene itself will do
+        bind(4, ao ? this.aoTemp : this.scene, "u_ao");
+        c.set("u_aoStrength", ao ? s.ao.intensity : 0);
         this._texel[0] = 1 / this.scene.width; this._texel[1] = 1 / this.scene.height;
         c.set("u_texel", this._texel);
         c.set("u_bloomIntensity", b.enabled ? b.intensity : 0);
@@ -158,6 +195,7 @@ export class PostFX {
     dispose() {
         const gl = this.gl;
         this.scene.dispose();
+        this.ao.dispose(); this.aoTemp.dispose();
         for (const rt of [...this.mips, ...this.temps]) rt.dispose();
         for (const p of Object.values(this.programs)) p.dispose();
         gl.deleteBuffer(this.quad);

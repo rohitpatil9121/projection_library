@@ -3,6 +3,7 @@ import { ATTRIB } from "./config.js";
 /**
  * Mesh: geometry + material, with one vertex array object (VAO) per GL context.
  * InstancedMesh: draws the same geometry many times in one draw call with per-instance matrix + colour.
+ * SkinnedMesh: a mesh deformed by a skeleton (see engine/Animation.js).
  * @module engine/Mesh
  */
 export class Mesh {
@@ -14,6 +15,13 @@ export class Mesh {
         this.geometry = geometry;
         this.material = material;
         this.isInstanced = false;
+        this.isSkinned = false;
+        /**
+         * Uniform values for this mesh alone, set after the material's. Lets many meshes share one material
+         * (and so one shader program) while differing in, say, a colour palette.
+         * @type {Record<string, any> | null}
+         */
+        this.uniforms = null;
         this._vaos = new WeakMap();
     }
 
@@ -146,4 +154,28 @@ export class InstancedMesh extends Mesh {
         const g = this._gpu.get(gl);
         if (g) { gl.deleteBuffer(g.matrix); gl.deleteBuffer(g.color); this._gpu.delete(gl); }
     }
+}
+
+/**
+ * SkinnedMesh: a mesh bent by a skeleton. The geometry needs `joints` and `weights`; the material must be
+ * one with a skinning variant (StandardMaterial). The skeleton's root sits at the entity's origin, so the
+ * entity places and turns the whole character and the Animator moves the limbs.
+ *
+ *   const animator = new Animator(skeleton, clips);
+ *   entity.mesh = new SkinnedMesh(geometry, material, animator);
+ */
+export class SkinnedMesh extends Mesh {
+    /**
+     * @param {import("./Geometry.js").Geometry} geometry
+     * @param {import("./Material.js").Material} material
+     * @param {import("./Animation.js").Animator} animator
+     */
+    constructor(geometry, material, animator) {
+        super(geometry, material);
+        this.isSkinned = true;
+        this.animator = animator;
+    }
+
+    /** the skinning matrices the shader reads (SKIN.maxJoints × 16 floats) */
+    get jointMatrices() { return this.animator.matrices; }
 }

@@ -27,12 +27,17 @@ function floatFormat(gl) {
 export class RenderTarget {
     /**
      * @param {WebGLRenderingContext | WebGL2RenderingContext} gl
-     * @param {{ float?: boolean, depth?: boolean }} [options]
+     * @param {{ float?: boolean, depth?: boolean, depthTexture?: boolean }} [options]
+     *        depthTexture: keep depth in a texture a later pass can read (ambient occlusion needs this).
+     *        Falls back to an ordinary depth buffer where depth textures aren't available.
      */
     constructor(gl, options = {}) {
         this.gl = gl;
         this.wantFloat = options.float ?? false;
         this.depth = options.depth ?? false;
+        this.wantDepthTexture = options.depthTexture ?? false;
+        /** the readable depth texture, when one was asked for and the GPU has them */
+        this.depthTexture = null;
         this.width = 0;
         this.height = 0;
         this.isFloat = false;
@@ -63,7 +68,17 @@ export class RenderTarget {
             this.framebuffer = gl.createFramebuffer();
             gl.bindFramebuffer(gl.FRAMEBUFFER, this.framebuffer);
             gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.texture, 0);
-            if (this.depth) {
+            const isGL2 = typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext;
+            if (this.depth && this.wantDepthTexture && (isGL2 || gl.getExtension("WEBGL_depth_texture"))) {
+                this.depthTexture = gl.createTexture();
+                gl.bindTexture(gl.TEXTURE_2D, this.depthTexture);
+                gl.texImage2D(gl.TEXTURE_2D, 0, isGL2 ? gl.DEPTH_COMPONENT24 : gl.DEPTH_COMPONENT, width, height, 0, gl.DEPTH_COMPONENT, gl.UNSIGNED_INT, null);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+                gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+                gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_ATTACHMENT, gl.TEXTURE_2D, this.depthTexture, 0);
+            } else if (this.depth) {
                 this.depthBuffer = gl.createRenderbuffer();
                 gl.bindRenderbuffer(gl.RENDERBUFFER, this.depthBuffer);
                 gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH_COMPONENT16, width, height);
@@ -91,7 +106,8 @@ export class RenderTarget {
         if (this.texture) gl.deleteTexture(this.texture);
         if (this.framebuffer) gl.deleteFramebuffer(this.framebuffer);
         if (this.depthBuffer) gl.deleteRenderbuffer(this.depthBuffer);
-        this.texture = this.framebuffer = this.depthBuffer = null;
+        if (this.depthTexture) gl.deleteTexture(this.depthTexture);
+        this.texture = this.framebuffer = this.depthBuffer = this.depthTexture = null;
         if (!keepSize) { this.width = 0; this.height = 0; }
     }
 }

@@ -101,7 +101,9 @@ export class ShaderProgram {
         const program = gl.createProgram();
         gl.attachShader(program, vs);
         gl.attachShader(program, fs);
-        for (const name in ATTRIB_NAMES) gl.bindAttribLocation(program, ATTRIB_NAMES[name], name);
+        // a context with few attribute slots (some WebGL1 devices have 8) simply does without the high ones
+        const maxAttribs = gl.getParameter(gl.MAX_VERTEX_ATTRIBS);
+        for (const name in ATTRIB_NAMES) if (ATTRIB_NAMES[name] < maxAttribs) gl.bindAttribLocation(program, ATTRIB_NAMES[name], name);
         gl.linkProgram(program);
         gl.deleteShader(vs);
         gl.deleteShader(fs);
