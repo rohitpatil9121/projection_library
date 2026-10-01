@@ -14,6 +14,7 @@ export const ATTRIB = Object.freeze({
     instanceColor: 8,
     joints: 9,           // four joint indices per vertex (skinning)
     weights: 10,         // their four weights
+    tangent: 11,         // xyz + handedness (normal mapping)
 });
 
 /** Attribute names as they appear in GLSL, mapped to their fixed location. */
@@ -26,6 +27,7 @@ export const ATTRIB_NAMES = Object.freeze({
     a_instanceColor: ATTRIB.instanceColor,
     a_joints: ATTRIB.joints,
     a_weights: ATTRIB.weights,
+    a_tangent: ATTRIB.tangent,
 });
 
 /** Quality presets. P1 uses `dprCap` and `resolutionScale`; later phases add particles, post-FX, shadows. */
@@ -60,11 +62,17 @@ export const LIGHTS = Object.freeze({
     maxPoint: 16,
     /** texture unit reserved for the shadow map, clear of material textures */
     shadowUnit: 7,
+    /** most cascades a ShadowMap can split the camera's view into (one atlas tile each) */
+    maxCascades: 3,
 });
 
 export const SKIN = Object.freeze({
-    /** joints per skeleton: a mat4 uniform array of this size */
+    /** joints per skeleton sent as a mat4 uniform array; bigger skeletons go through a float texture */
     maxJoints: 32,
+    /** joints per skeleton when the matrices travel in a texture (needs float textures in the vertex shader) */
+    maxTextureJoints: 256,
+    /** texture unit reserved for that joint texture */
+    textureUnit: 6,
 });
 
 export const RENDER = Object.freeze({

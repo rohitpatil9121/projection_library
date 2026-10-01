@@ -38,7 +38,7 @@ export class Skeleton {
     constructor(data) {
         this.names = data.names;
         this.count = data.names.length;
-        if (this.count > SKIN.maxJoints) throw new Error(`Skeleton has ${this.count} joints; the engine supports ${SKIN.maxJoints}`);
+        if (this.count > SKIN.maxTextureJoints) throw new Error(`Skeleton has ${this.count} joints; the engine supports ${SKIN.maxTextureJoints}`);
         this.parents = Int16Array.from(data.parents);
         this.rest = data.rest;
         this.inverseBind = data.inverseBind;
@@ -109,9 +109,12 @@ export class Animator {
         this._from = new Float32Array(n * POSE_STRIDE);
         /** joint matrices in model space (where each joint is), 16 floats each */
         this.model = new Float32Array(n * 16);
-        /** skinning matrices for the shader: always SKIN.maxJoints long, unused ones stay identity */
-        this.matrices = new Float32Array(SKIN.maxJoints * 16);
-        for (let i = 0; i < SKIN.maxJoints; i++) this.matrices[i * 16] = this.matrices[i * 16 + 5] = this.matrices[i * 16 + 10] = this.matrices[i * 16 + 15] = 1;
+        /** skinning matrices for the shader: at least SKIN.maxJoints long, unused ones stay identity */
+        const slots = Math.max(SKIN.maxJoints, n);
+        this.matrices = new Float32Array(slots * 16);
+        for (let i = 0; i < slots; i++) this.matrices[i * 16] = this.matrices[i * 16 + 5] = this.matrices[i * 16 + 10] = this.matrices[i * 16 + 15] = 1;
+        /** bumped by solve(); a SkinnedMesh re-uploads its joint texture when it changes */
+        this.version = 0;
         this.clip = null;
         this.time = 0;
         this.speed = 1;
@@ -210,6 +213,7 @@ export class Animator {
             else for (let k = 0; k < 16; k++) M[m + k] = L[k];
             multiply(out, m, M, m, ib, m);
         }
+        this.version++;
     }
 
     /**

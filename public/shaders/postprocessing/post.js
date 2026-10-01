@@ -71,7 +71,8 @@ void main() {
 `;
 
 /**
- * Composite: scene (× ambient occlusion) + bloom mips, exposure, ACES tone map, vignette, grain, optional chromatic aberration,
+ * Composite: scene (× ambient occlusion) + bloom mips, exposure, tone map (ACES or Reinhard), saturation and contrast,
+ * vignette, grain, optional chromatic aberration,
  * and a small edge-aware anti-aliasing step (framebuffers have no MSAA in WebGL1).
  *
  * ACES filmic curve: the analytic fit by Krzysztof Narkowicz ("ACES Filmic Tone Mapping Curve", 2016,
@@ -89,7 +90,9 @@ uniform float u_vignette;
 uniform float u_grain;
 uniform float u_aberration;
 uniform float u_time;
-uniform float u_tonemap;       // 1 = ACES, 0 = clamp
+uniform float u_tonemap;       // 0 = clamp, 1 = ACES, 2 = Reinhard
+uniform float u_saturation;    // 1 = unchanged
+uniform float u_contrast;      // 1 = unchanged
 uniform float u_antialias;     // 1 = on
 uniform sampler2D u_ao;        // ambient occlusion (white = open)
 uniform float u_aoStrength;    // 0 = off
@@ -138,7 +141,9 @@ void main() {
     vec3 bloom = texture2D(u_bloom0, v_uv).rgb * 0.5 + texture2D(u_bloom1, v_uv).rgb * 0.35 + texture2D(u_bloom2, v_uv).rgb * 0.35;
     col += bloom * u_bloomIntensity;
     col *= u_exposure;
-    col = u_tonemap > 0.5 ? aces(col) : clamp(col, 0.0, 1.0);
+    col = u_tonemap > 1.5 ? col / (1.0 + col) : (u_tonemap > 0.5 ? aces(col) : clamp(col, 0.0, 1.0));
+    col = mix(vec3(luma(col)), col, u_saturation);
+    col = max((col - 0.5) * u_contrast + 0.5, 0.0);
     vec2 q = v_uv - 0.5;
     col *= 1.0 - dot(q, q) * u_vignette * 2.0;
     col += (hash(v_uv * 913.0 + fract(u_time) * 71.0) - 0.5) * u_grain;
@@ -210,14 +215,35 @@ void main() {
 }
 `;
 
-/** 4×4 box blur in four bilinear taps: removes the per-pixel rotation noise of the SSAO pass. */
+/**
+ * Depth-aware blur: removes the per-pixel rotation noise of the SSAO pass without smearing it across
+ * edges. A plain blur averages a pixel on a thin post with the wall far behind it, which paints a dark
+ * halo around the post. Here each of the nine taps is weighted by how close its depth is to the centre
+ * pixel's, so only neighbours on the same surface take part (a "bilateral" blur).
+ */
 export const ssaoBlurFragment = /* glsl */ `
 uniform sampler2D u_source;
+uniform sampler2D u_depth;
+uniform vec4 u_proj;        // x: focal / aspect, y: focal, z: near, w: far
 uniform vec2 u_texel;
+uniform float u_radius;     // the occlusion radius, world units: depth differences beyond it don't mix
 varying vec2 v_uv;
+
+float viewZ(vec2 uv) {
+    float d = texture2D(u_depth, uv).r * 2.0 - 1.0;
+    return 2.0 * u_proj.w * u_proj.z / ((u_proj.w + u_proj.z) - d * (u_proj.w - u_proj.z));
+}
+
 void main() {
-    float a = texture2D(u_source, v_uv + u_texel * vec2(-1.0, -1.0)).r + texture2D(u_source, v_uv + u_texel * vec2(1.0, -1.0)).r
-            + texture2D(u_source, v_uv + u_texel * vec2(-1.0, 1.0)).r + texture2D(u_source, v_uv + u_texel * vec2(1.0, 1.0)).r;
-    gl_FragColor = vec4(vec3(a * 0.25), 1.0);
+    float centre = viewZ(v_uv), sum = 0.0, total = 0.0;
+    for (int x = -1; x <= 1; x++) {
+        for (int y = -1; y <= 1; y++) {
+            vec2 uv = v_uv + vec2(float(x), float(y)) * u_texel * 1.5;
+            float w = max(0.0, 1.0 - abs(viewZ(uv) - centre) / u_radius) + 0.001;
+            sum += texture2D(u_source, uv).r * w;
+            total += w;
+        }
+    }
+    gl_FragColor = vec4(vec3(sum / total), 1.0);
 }
 `;

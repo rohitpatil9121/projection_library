@@ -9,7 +9,8 @@ import { Texture } from "./Texture.js";
  * Per frame:
  *   1. resize the drawing buffer if the canvas CSS size / DPR / quality changed (ResizeObserver)
  *   2. update world matrices (interpolated by the loop's alpha)
- *   3. collect visible meshes into reused opaque / transparent lists
+ *   3. collect meshes into reused opaque / transparent lists, skipping those outside the camera's view
+ *      (frustum culling, see below) and picking each entity's level of detail
  *   4. shadow pass: if scene.shadow is set, draw the opaque casters from the sun into its depth texture
  *   5. opaque: sorted by program to minimise state changes; transparent: back to front
  *   6. per program, per frame: camera, lights, fog and shadow uniforms are set once (frame stamp)
@@ -24,10 +25,18 @@ import { Texture } from "./Texture.js";
  * Engine uniforms every material may declare: u_camPos, u_camRight, u_camUp, u_camForward, u_proj,
  * u_time (seconds, set via renderer.time), u_viewport (drawing buffer px), u_model, u_normalMatrix,
  * u_sunDirection, u_sunColor, u_skyColor, u_groundColor, u_pointPos, u_pointColor, u_pointCount, u_fog,
- * u_shadowMap, u_shadowMatrix, u_shadowParams, and u_joints on skinned meshes.
+ * u_shadowMap, u_shadowMatrix, u_shadowParams, u_shadowCascade, and u_joints (or u_jointTexture) on skinned meshes.
  * A material or mesh uniform whose value is a Texture is bound to the next free texture unit.
  *
- * `stats` counts draw calls, vertices, triangles and instances for a performance HUD.
+ * Frustum culling. What the camera sees is a pyramid with its top cut off (a frustum): four side planes
+ * through the eye, plus near and far. Every mesh has a bounding sphere (Geometry.computeBounds), moved and
+ * scaled by its entity. If the sphere lies wholly outside any one of the six planes, nothing of the mesh
+ * can be on screen and it is not drawn. The test runs in camera space with the same three dot products
+ * the vertex shader uses. Instanced, skinned and dynamic meshes and custom shaders have no trustworthy
+ * sphere and are always drawn, unless you give the entity one: `entity.cullRadius = 3`.
+ * Shadow casters are collected before culling: something behind you can still throw a shadow into view.
+ *
+ * `stats` counts draw calls, culled meshes, vertices, triangles and instances for a performance HUD.
  * @module engine/Renderer
  */
 
@@ -44,7 +53,7 @@ export class Renderer {
     /**
      * @param {HTMLCanvasElement} canvas
      * @param {{ quality?: keyof QUALITY, preferWebGL2?: boolean, antialias?: boolean,
-     *           preserveDrawingBuffer?: boolean, autoResize?: boolean }} [options]
+     *           preserveDrawingBuffer?: boolean, autoResize?: boolean, frustumCulling?: boolean }} [options]
      */
     constructor(canvas, options = {}) {
         this.canvas = canvas;
@@ -57,7 +66,9 @@ export class Renderer {
         this.resolutionScale = 1;
         /** @type {Map<string, ShaderProgram>} */
         this.programs = new Map();
-        this.stats = { drawCalls: 0, shadowCalls: 0, vertices: 0, triangles: 0, instances: 0, programs: 0, width: 0, height: 0, dpr: 1, postPasses: 0 };
+        /** skip meshes whose bounding sphere is outside the camera's view */
+        this.frustumCulling = options.frustumCulling ?? true;
+        this.stats = { drawCalls: 0, shadowCalls: 0, culled: 0, vertices: 0, triangles: 0, instances: 0, programs: 0, width: 0, height: 0, dpr: 1, postPasses: 0 };
         this.frameId = 0;
         /** seconds, passed to shaders as u_time (Game sets it from the loop) */
         this.time = 0;
@@ -71,6 +82,9 @@ export class Renderer {
         this._depth = new Map();
         this._byDepth = (a, b) => this._depth.get(b) - this._depth.get(a);
         this._state = { program: null, cull: null, blend: null, depthTest: null, depthWrite: null };
+        // the camera in the form the culling test wants: eye, basis, the slopes of the side planes
+        this._frustum = { eye: null, right: null, up: null, forward: null, px: 1, py: 1, kx: 1, ky: 1, near: 0, far: 1 };
+        this._wantCasters = false;
 
         // per-frame light data, packed once and handed to every program that declares it
         this._pointPos = new Float32Array(LIGHTS.maxPoint * 4);
@@ -113,11 +127,13 @@ export class Renderer {
      * @param {import("./Material.js").Material} material
      * @param {boolean} instanced
      * @param {boolean} [skinned]
+     * @param {boolean} [jointTexture] skinning matrices come from a texture instead of a uniform array
      */
-    programFor(material, instanced, skinned = false) {
+    programFor(material, instanced, skinned = false, jointTexture = false) {
         const defines = material.defines();
         if (instanced) defines.INSTANCED = true;
         if (skinned) defines.SKINNED = true;
+        if (skinned && jointTexture) defines.JOINT_TEXTURE = true;
         let key = material.shader.name;
         for (const k in defines) if (defines[k]) key += "|" + k + (defines[k] === true ? "" : "=" + defines[k]);
         let p = this.programs.get(key);
@@ -138,24 +154,28 @@ export class Renderer {
     render(scene, camera, alpha = 1) {
         const gl = this.gl, s = this.stats;
         this.frameId++;
-        s.drawCalls = s.shadowCalls = s.vertices = s.triangles = s.instances = 0;
+        s.drawCalls = s.shadowCalls = s.culled = s.vertices = s.triangles = s.instances = 0;
 
         scene.root.updateWorldMatrix(alpha);
 
+        const cam = camera.writeUniforms(this.aspect);
+        const fr = this._frustum;
+        fr.eye = camera.eye; fr.right = camera.right; fr.up = camera.up; fr.forward = camera.forward;
+        fr.px = cam.u_proj[0]; fr.py = cam.u_proj[1]; fr.kx = Math.hypot(1, fr.px); fr.ky = Math.hypot(1, fr.py);
+        fr.near = camera.near; fr.far = camera.far;
+
         // collect
-        const opaque = this._opaque, transparent = this._transparent;
-        opaque.length = 0; transparent.length = 0;
+        const shadow = scene.shadow || null;
+        const opaque = this._opaque, transparent = this._transparent, casters = this._casters;
+        opaque.length = 0; transparent.length = 0; casters.length = 0;
+        this._wantCasters = !!(shadow && shadow.enabled && shadow.strength > 0);
         this._collect(scene.root, opaque, transparent);
 
         // shadow pass: the scene as the sun sees it
-        const shadow = scene.shadow || null;
         this._shadowTexture = null;
         if (shadow) {
-            shadow.update(scene.sunDirection);
-            if (shadow.enabled && shadow.strength > 0) {
-                const casters = this._casters;
-                casters.length = 0;
-                for (const e of opaque) if (e.castShadow !== false && e.mesh.material.castShadow !== false) casters.push(e);
+            shadow.update(scene.sunDirection, camera, this.aspect);
+            if (this._wantCasters) {
                 shadow.render(this, casters);
                 s.shadowCalls = shadow.drawCalls;
                 this._shadowTexture = shadow.texture(gl);
@@ -173,7 +193,6 @@ export class Renderer {
         this._setDepthWrite(true);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-        const cam = camera.writeUniforms(this.aspect);
         if (scene.sky) { scene.sky.draw(gl, cam, this.time); this._resetState(); }
 
         // opaque: group by program key to avoid switching programs back and forth
@@ -221,21 +240,70 @@ export class Renderer {
 
     _collect(node, opaque, transparent) {
         if (!node.visible) return;
+        if (node.lod) node.mesh = this._pickLOD(node);
         const mesh = node.mesh;
         if (mesh && !(mesh.isInstanced && mesh.count === 0)) {
             // program lookup is cached on the mesh; rebuilt only when the material changes variant
             const mat = mesh.material;
             if (mesh._program === undefined || mesh._programRenderer !== this || mesh._programMaterial !== mat || mesh._programVersion !== mat.variantVersion) {
-                mesh._program = this.programFor(mat, mesh.isInstanced, mesh.isSkinned);
+                // a normal map needs tangents; make them once if the mesh came without
+                if (mat.normalMap && !mesh.geometry.tangents) mesh.geometry.computeTangents();
+                mesh._program = this.programFor(mat, mesh.isInstanced, mesh.isSkinned, mesh.usesJointTexture);
                 mesh._programRenderer = this;
                 mesh._programMaterial = mat;
                 mesh._programVersion = mat.variantVersion;
             }
             node._program = mesh._program;
             node._pk = node._program.name;
-            (mesh.material.transparent ? transparent : opaque).push(node);
+            const bounds = this._bounds(node, mesh);
+            const inView = bounds[3] < 0 || !this.frustumCulling || node.frustumCulled === false || this._inView(bounds);
+            if (!inView) this.stats.culled++;
+            if (mat.transparent) { if (inView) transparent.push(node); }
+            else {
+                if (this._wantCasters && node.castShadow !== false && mat.castShadow !== false) this._casters.push(node);
+                if (inView) opaque.push(node);
+            }
         }
         for (let i = 0; i < node.children.length; i++) this._collect(node.children[i], opaque, transparent);
+    }
+
+    /**
+     * World-space bounding sphere of an entity's mesh, kept on the entity as [x, y, z, radius].
+     * A radius below zero means "unknown": the mesh is never culled.
+     */
+    _bounds(node, mesh) {
+        const b = node._bounds || (node._bounds = new Float32Array(4)), m = node.worldMatrix;
+        if (node.cullRadius > 0) { b[0] = m[12]; b[1] = m[13]; b[2] = m[14]; b[3] = node.cullRadius; return b; }
+        const geo = mesh.geometry;
+        if (mesh.isInstanced || mesh.isSkinned || geo.dynamic || mesh.material.isShaderMaterial) { b[3] = -1; return b; }
+        const c = geo.freshBounds().boundsCenter;
+        b[0] = m[0] * c[0] + m[4] * c[1] + m[8] * c[2] + m[12];
+        b[1] = m[1] * c[0] + m[5] * c[1] + m[9] * c[2] + m[13];
+        b[2] = m[2] * c[0] + m[6] * c[1] + m[10] * c[2] + m[14];
+        // the sphere grows by the largest of the three axis scales
+        b[3] = geo.boundingRadius * Math.sqrt(Math.max(m[0] * m[0] + m[1] * m[1] + m[2] * m[2], m[4] * m[4] + m[5] * m[5] + m[6] * m[6], m[8] * m[8] + m[9] * m[9] + m[10] * m[10]));
+        return b;
+    }
+
+    /** Is any part of this sphere inside the camera's frustum? */
+    _inView(b) {
+        const f = this._frustum, x = b[0] - f.eye[0], y = b[1] - f.eye[1], z = b[2] - f.eye[2], r = b[3];
+        const depth = x * f.forward[0] + y * f.forward[1] + z * f.forward[2];
+        if (depth + r < f.near || depth - r > f.far) return false;
+        // a side plane passes through the eye; (|side| · slope − depth) / length is how far outside it the centre is
+        const side = Math.abs(x * f.right[0] + y * f.right[1] + z * f.right[2]);
+        if (side * f.px - depth > r * f.kx) return false;
+        const rise = Math.abs(x * f.up[0] + y * f.up[1] + z * f.up[2]);
+        return rise * f.py - depth <= r * f.ky;
+    }
+
+    /** The mesh of the last level whose distance the camera has passed (see Entity.lod). */
+    _pickLOD(node) {
+        const m = node.worldMatrix, eye = this._frustum.eye, levels = node.lod;
+        const d = Math.hypot(m[12] - eye[0], m[13] - eye[1], m[14] - eye[2]);
+        let mesh = levels[0].mesh;
+        for (let i = 1; i < levels.length && d >= levels[i].distance; i++) mesh = levels[i].mesh;
+        return mesh;
     }
 
     /** Set uniforms from a plain object; Texture values are bound to the next free unit, nulls are skipped. */
@@ -280,8 +348,9 @@ export class Renderer {
                 gl.activeTexture(gl.TEXTURE0 + LIGHTS.shadowUnit);
                 if (this._shadowTexture) {
                     gl.bindTexture(gl.TEXTURE_2D, this._shadowTexture);
-                    program.set("u_shadowMatrix", shadow.matrix);
+                    program.set("u_shadowMatrix", shadow.matrices);
                     program.set("u_shadowParams", shadow.params);
+                    program.set("u_shadowCascade", shadow.cascadeData);
                 } else {
                     this._white.bind(gl, LIGHTS.shadowUnit);
                     program.set("u_shadowMatrix", IDENTITY);
@@ -293,7 +362,7 @@ export class Renderer {
         this._unit = 0;
         this._apply(program, mat.uniforms());
         if (mesh.uniforms) this._apply(program, mesh.uniforms);
-        if (mesh.isSkinned) program.set("u_joints", mesh.jointMatrices);
+        if (mesh.isSkinned) mesh.bindJoints(gl, program);
         program.set("u_model", entity.worldMatrix);
         program.set("u_normalMatrix", entity.normalMatrix);
 

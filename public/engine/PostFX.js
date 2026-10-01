@@ -8,7 +8,7 @@ import * as post from "../shaders/postprocessing/post.js";
  *   scene ──► [HDR target + depth texture]
  *               ├─► ambient occlusion ½ (from depth) ─► blur ─► ao      (optional, settings.ao)
  *               ├─► bright pass ½ ─► blur ─► mip0 ─► ¼ ─► blur ─► mip1 ─► ⅛ ─► blur ─► mip2
- *               └──────────────────────────────── composite (+ mips, exposure, ACES, vignette, grain, AA) ─► screen
+ *               └──────────────── composite (+ mips, exposure, tone map, grading, vignette, grain, AA) ─► screen
  *
  * Bloom is "selective" by brightness: only values above `threshold` bleed. With an HDR target, emissive
  * colours brighter than 1.0 (e.g. emissive × 3) glow while ordinary lit surfaces don't.
@@ -27,7 +27,12 @@ export const POSTFX_DEFAULTS = Object.freeze({
     /** ambient occlusion: off by default, so existing scenes look as they did */
     ao: { enabled: false, radius: 0.7, intensity: 0.85, bias: 0.04 },
     exposure: 1.0,
+    /** true or "aces": filmic curve; "reinhard": softer, keeps more colour in highlights; false or "none": clamp */
     tonemap: true,
+    /** colour grading after tone mapping: 0 = grey, 1 = unchanged, above 1 = more vivid */
+    saturation: 1.0,
+    /** 1 = unchanged; above 1 pushes darks and lights apart around mid grey */
+    contrast: 1.0,
     vignette: 0.25,
     grain: 0.025,
     aberration: 0,
@@ -150,7 +155,15 @@ export class PostFX {
             p.set("u_bias", s.ao.bias);
             gl.drawArrays(gl.TRIANGLES, 0, 3);
             this.passes++;
-            this._pass(this.programs.ssaoBlur, this.aoTemp, this.ao);
+            // the blur reads depth too, so it can refuse to average across the edge of an object
+            const blur = this.programs.ssaoBlur;
+            blur.use();
+            gl.activeTexture(gl.TEXTURE1);
+            gl.bindTexture(gl.TEXTURE_2D, this.scene.depthTexture);
+            blur.set("u_depth", 1);
+            blur.set("u_proj", cam.u_proj);
+            blur.set("u_radius", s.ao.radius);
+            this._pass(blur, this.aoTemp, this.ao);
         }
 
         if (b.enabled) {
@@ -178,7 +191,9 @@ export class PostFX {
         c.set("u_texel", this._texel);
         c.set("u_bloomIntensity", b.enabled ? b.intensity : 0);
         c.set("u_exposure", s.exposure);
-        c.set("u_tonemap", s.tonemap ? 1 : 0);
+        c.set("u_tonemap", s.tonemap === true || s.tonemap === "aces" ? 1 : s.tonemap === "reinhard" ? 2 : 0);
+        c.set("u_saturation", s.saturation ?? 1);
+        c.set("u_contrast", s.contrast ?? 1);
         c.set("u_vignette", s.vignette);
         c.set("u_grain", s.grain);
         c.set("u_aberration", s.aberration);

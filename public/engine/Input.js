@@ -1,5 +1,5 @@
 /**
- * Input: keyboard, mouse, touch, pointer lock and gamepads behind named actions.
+ * Input: keyboard, mouse, touch, pointer lock, gamepads and on-screen controls behind named actions.
  *
  *   input.bind("jump", ["Space", "KeyW", "GamepadA"]);
  *   input.bindAxis("steer", { negative: ["KeyA", "ArrowLeft"], positive: ["KeyD", "ArrowRight"], gamepad: "LeftX" });
@@ -48,6 +48,8 @@ export class Input {
         this.actions = new Map();
         /** @type {Map<string, { negative: string[], positive: string[], gamepad?: string }>} */
         this.axes = new Map();
+        /** axis values pushed in from outside (an on-screen joystick, see engine/TouchControls) */
+        this.virtualAxes = new Map();
 
         /** pointer state; deltas accumulate between steps (see beginStep) */
         this.pointer = { x: 0, y: 0, dx: 0, dy: 0, wheel: 0, pinch: 1, dragging: false, locked: false, type: "mouse" };
@@ -82,16 +84,24 @@ export class Input {
     /** -1..1 from keys and/or a gamepad stick (the larger magnitude wins). */
     axis(name) {
         const a = this.axes.get(name);
-        if (!a) return 0;
         let v = 0;
-        for (const c of a.negative) if (this.down.has(c)) { v -= 1; break; }
-        for (const c of a.positive) if (this.down.has(c)) { v += 1; break; }
-        if (a.gamepad) {
-            const s = this.stick(a.gamepad);
-            if (Math.abs(s) > Math.abs(v)) v = s;
+        if (a) {
+            for (const c of a.negative) if (this.down.has(c)) { v -= 1; break; }
+            for (const c of a.positive) if (this.down.has(c)) { v += 1; break; }
+            if (a.gamepad) {
+                const s = this.stick(a.gamepad);
+                if (Math.abs(s) > Math.abs(v)) v = s;
+            }
         }
+        const t = this.virtualAxes.get(name);
+        if (t !== undefined && Math.abs(t) > Math.abs(v)) v = t;
         return v;
     }
+
+    /** Hold a code down from code (an on-screen button, a test, a replay). Any name works: "TouchA". */
+    press(code) { this._press(code); }
+    /** Let go of a code held with press(). */
+    release(code) { this._release(code); }
 
     /** Raw gamepad axis with dead-zone applied. */
     stick(axisName) {

@@ -1,5 +1,6 @@
 import { Entity } from "./Entity.js";
 import { RENDER } from "./config.js";
+import { raycast } from "./Collision.js";
 
 /**
  * Scene: the root of the entity tree, plus the environment settings the Renderer reads.
@@ -51,6 +52,13 @@ export class Scene {
         fn(node);
         for (const c of node.children) this.traverse(fn, c);
     }
+
+    /**
+     * What does a ray hit? Nearest first. See engine/Collision.raycast for the options.
+     *   scene.raycast(camera.screenRay(pointer.x, pointer.y, canvas.clientWidth, canvas.clientHeight))[0]
+     * @param {{ origin: ArrayLike<number>, direction: ArrayLike<number> }} ray
+     */
+    raycast(ray, options) { return raycast(this.root, ray, options); }
 
     /** Find the first entity with a name. */
     find(name) {

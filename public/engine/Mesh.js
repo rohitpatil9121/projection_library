@@ -1,4 +1,4 @@
-import { ATTRIB } from "./config.js";
+import { ATTRIB, SKIN } from "./config.js";
 
 /**
  * Mesh: geometry + material, with one vertex array object (VAO) per GL context.
@@ -163,6 +163,10 @@ export class InstancedMesh extends Mesh {
  *
  *   const animator = new Animator(skeleton, clips);
  *   entity.mesh = new SkinnedMesh(geometry, material, animator);
+ *
+ * Up to SKIN.maxJoints joints, the skinning matrices are a uniform array. A bigger skeleton (most
+ * downloaded character rigs have 50 to 70 bones) sends them as one row of a float texture, four texels per
+ * joint, which the vertex shader reads back; that needs WebGL2 or the OES_texture_float extension.
  */
 export class SkinnedMesh extends Mesh {
     /**
@@ -174,8 +178,49 @@ export class SkinnedMesh extends Mesh {
         super(geometry, material);
         this.isSkinned = true;
         this.animator = animator;
+        /** true when the skeleton is too big for a uniform array */
+        this.usesJointTexture = animator.skeleton.count > SKIN.maxJoints;
+        this._jointGPU = new WeakMap();
     }
 
-    /** the skinning matrices the shader reads (SKIN.maxJoints × 16 floats) */
+    /** the skinning matrices the shader reads (16 floats per joint, at least SKIN.maxJoints of them) */
     get jointMatrices() { return this.animator.matrices; }
+
+    /**
+     * Hand the skinning matrices to a program: as a uniform array, or through the joint texture.
+     * @param {WebGLRenderingContext | WebGL2RenderingContext} gl
+     * @param {import("./gl/ShaderProgram.js").ShaderProgram} program
+     */
+    bindJoints(gl, program) {
+        const animator = this.animator;
+        if (!this.usesJointTexture) { program.set("u_joints", animator.matrices); return; }
+        const count = animator.skeleton.count, width = count * 4;
+        let g = this._jointGPU.get(gl);
+        gl.activeTexture(gl.TEXTURE0 + SKIN.textureUnit);
+        if (!g) {
+            const webgl2 = typeof WebGL2RenderingContext !== "undefined" && gl instanceof WebGL2RenderingContext;
+            g = { texture: gl.createTexture(), version: -1 };
+            this._jointGPU.set(gl, g);
+            if (!webgl2 && !gl.getExtension("OES_texture_float")) console.warn("SkinnedMesh: this skeleton needs float textures, which this device lacks; the mesh will not animate");
+            gl.bindTexture(gl.TEXTURE_2D, g.texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, webgl2 ? gl.RGBA32F : gl.RGBA, width, 1, 0, gl.RGBA, gl.FLOAT, null);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        } else gl.bindTexture(gl.TEXTURE_2D, g.texture);
+        // the shadow pass and the main pass both come through here; upload once per new pose
+        if (g.version !== animator.version) {
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, width, 1, gl.RGBA, gl.FLOAT, animator.matrices.subarray(0, count * 16));
+            g.version = animator.version;
+        }
+        program.set("u_jointTexture", SKIN.textureUnit);
+        program.set("u_jointTextureWidth", width);
+    }
+
+    dispose(gl) {
+        super.dispose(gl);
+        const g = this._jointGPU.get(gl);
+        if (g) { gl.deleteTexture(g.texture); this._jointGPU.delete(gl); }
+    }
 }

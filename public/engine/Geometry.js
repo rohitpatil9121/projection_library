@@ -12,7 +12,8 @@ import { ATTRIB } from "./config.js";
 export class Geometry {
     /**
      * @param {{ positions: Float32Array, normals?: Float32Array, uvs?: Float32Array, colors?: Float32Array,
-     *           joints?: Float32Array, weights?: Float32Array,
+     *           joints?: Float32Array, weights?: Float32Array, tangents?: Float32Array,
+     *           morphTargets?: Array<{ positions: Float32Array, normals?: Float32Array | null }>,
      *           indices?: Uint16Array | Uint32Array, mode?: "triangles" | "lines" | "lineStrip" | "points",
      *           dynamic?: boolean, name?: string }} data
      *        dynamic: the arrays are rewritten often (particles, trails); uses DYNAMIC_DRAW and bufferSubData.
@@ -25,6 +26,10 @@ export class Geometry {
         this.colors = data.colors || null;
         this.joints = data.joints || null;
         this.weights = data.weights || null;
+        /** xyz + handedness per vertex, for normal maps; see computeTangents() */
+        this.tangents = data.tangents || null;
+        /** shape keys: position (and normal) offsets blended by applyMorph() */
+        this.morphTargets = data.morphTargets || null;
         this.indices = data.indices || null;
         /** @type {"triangles" | "lines" | "lineStrip" | "points"} */
         this.mode = data.mode || "triangles";
@@ -38,19 +43,93 @@ export class Geometry {
         this.computeBounds();
     }
 
+    /** Box and sphere around the vertices. The Renderer uses the sphere to skip meshes outside the view. */
     computeBounds() {
         const p = this.positions, min = [Infinity, Infinity, Infinity], max = [-Infinity, -Infinity, -Infinity];
         for (let i = 0; i < p.length; i += 3) for (let k = 0; k < 3; k++) {
             if (p[i + k] < min[k]) min[k] = p[i + k];
             if (p[i + k] > max[k]) max[k] = p[i + k];
         }
+        if (!p.length) { min.fill(0); max.fill(0); }
         this.boundsMin = min;
         this.boundsMax = max;
+        this.boundsCenter = [(min[0] + max[0]) / 2, (min[1] + max[1]) / 2, (min[2] + max[2]) / 2];
         this.boundingRadius = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2]) / 2;
+        this._boundsVersion = this.version;
     }
 
-    /** Re-upload all attribute data on next draw (after editing arrays in place). */
+    /** Re-upload all attribute data on next draw (after editing arrays in place). Bounds follow by themselves. */
     markDirty() { this.version++; }
+
+    /** Bounds that match the current vertices (recomputed once after a markDirty()). */
+    freshBounds() { if (this._boundsVersion !== this.version) this.computeBounds(); return this; }
+
+    /**
+     * Tangents for normal mapping: for every vertex, the direction along the surface in which the texture's
+     * U grows, plus a sign saying which way V goes. A normal map stores its bumps relative to that frame.
+     * Computed per triangle from positions and UVs, summed per vertex, then made perpendicular to the normal.
+     */
+    computeTangents() {
+        const P = this.positions, N = this.normals, U = this.uvs;
+        if (!N || !U) return this;
+        const n = this.vertexCount, tan = new Float32Array(n * 3), bit = new Float32Array(n * 3), out = new Float32Array(n * 4);
+        const count = this.indices ? this.indices.length : n;
+        for (let i = 0; i + 2 < count; i += 3) {
+            const a = this.indices ? this.indices[i] : i, b = this.indices ? this.indices[i + 1] : i + 1, c = this.indices ? this.indices[i + 2] : i + 2;
+            const x1 = P[b * 3] - P[a * 3], y1 = P[b * 3 + 1] - P[a * 3 + 1], z1 = P[b * 3 + 2] - P[a * 3 + 2];
+            const x2 = P[c * 3] - P[a * 3], y2 = P[c * 3 + 1] - P[a * 3 + 1], z2 = P[c * 3 + 2] - P[a * 3 + 2];
+            const s1 = U[b * 2] - U[a * 2], t1 = U[b * 2 + 1] - U[a * 2 + 1], s2 = U[c * 2] - U[a * 2], t2 = U[c * 2 + 1] - U[a * 2 + 1];
+            const det = s1 * t2 - s2 * t1;
+            if (Math.abs(det) < 1e-12) continue;
+            const r = 1 / det;
+            const tx = (t2 * x1 - t1 * x2) * r, ty = (t2 * y1 - t1 * y2) * r, tz = (t2 * z1 - t1 * z2) * r;
+            const bx = (s1 * x2 - s2 * x1) * r, by = (s1 * y2 - s2 * y1) * r, bz = (s1 * z2 - s2 * z1) * r;
+            for (const v of [a, b, c]) { tan[v * 3] += tx; tan[v * 3 + 1] += ty; tan[v * 3 + 2] += tz; bit[v * 3] += bx; bit[v * 3 + 1] += by; bit[v * 3 + 2] += bz; }
+        }
+        for (let v = 0; v < n; v++) {
+            const nx = N[v * 3], ny = N[v * 3 + 1], nz = N[v * 3 + 2];
+            let tx = tan[v * 3], ty = tan[v * 3 + 1], tz = tan[v * 3 + 2];
+            const d = nx * tx + ny * ty + nz * tz;
+            tx -= nx * d; ty -= ny * d; tz -= nz * d;
+            let l = Math.hypot(tx, ty, tz);
+            if (l < 1e-8) { // no usable UVs here: any direction along the surface will do
+                const ax = Math.abs(nx) < 0.9 ? 1 : 0, ay = ax ? 0 : 1;
+                tx = ay * nz; ty = -ax * nz; tz = ax * ny - ay * nx;
+                l = Math.hypot(tx, ty, tz) || 1;
+            }
+            tx /= l; ty /= l; tz /= l;
+            // handedness: does normal × tangent point the same way as the summed bitangent?
+            const cx = ny * tz - nz * ty, cy = nz * tx - nx * tz, cz = nx * ty - ny * tx;
+            out[v * 4] = tx; out[v * 4 + 1] = ty; out[v * 4 + 2] = tz;
+            out[v * 4 + 3] = cx * bit[v * 3] + cy * bit[v * 3 + 1] + cz * bit[v * 3 + 2] < 0 ? -1 : 1;
+        }
+        this.tangents = out;
+        this.version++;
+        return this;
+    }
+
+    /**
+     * Blend the shape keys (morph targets) into the vertices: position = base + Σ weight · offset.
+     * Done on the CPU and re-uploaded, so it suits a face or a few props, not a crowd.
+     * @param {ArrayLike<number>} weights one per morph target
+     */
+    applyMorph(weights) {
+        const targets = this.morphTargets;
+        if (!targets || !targets.length) return this;
+        if (!this._morphBase) this._morphBase = { positions: this.positions.slice(), normals: this.normals ? this.normals.slice() : null };
+        const base = this._morphBase, P = this.positions, N = this.normals;
+        P.set(base.positions);
+        if (N) N.set(base.normals);
+        for (let t = 0; t < targets.length; t++) {
+            const w = weights[t] || 0;
+            if (!w) continue;
+            const dp = targets[t].positions, dn = targets[t].normals;
+            for (let i = 0; i < P.length; i++) P[i] += dp[i] * w;
+            if (N && dn) for (let i = 0; i < N.length; i++) N[i] += dn[i] * w;
+        }
+        this.version++;
+        return this;
+    }
 
     /**
      * Create/refresh GPU buffers for a context and point the fixed attribute slots at them.
@@ -86,6 +165,7 @@ export class Geometry {
             attr("joints", this.joints, 4, ATTRIB.joints);
             attr("weights", this.weights, 4, ATTRIB.weights);
         }
+        if (this.tangents && ATTRIB.tangent < gl.getParameter(gl.MAX_VERTEX_ATTRIBS)) attr("tangent", this.tangents, 4, ATTRIB.tangent);
         if (this.indices) {
             if (!g.index) g.index = gl.createBuffer();
             gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, g.index);

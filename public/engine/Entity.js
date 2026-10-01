@@ -8,7 +8,8 @@ import { Transform } from "./Transform.js";
  * @module engine/Entity
  */
 export class Entity extends Transform {
-    /** @param {{ name?: string, mesh?: import("./Mesh.js").Mesh | null, visible?: boolean, staticShadow?: boolean, tags?: string[] }} [options] */
+    /** @param {{ name?: string, mesh?: import("./Mesh.js").Mesh | null, visible?: boolean, staticShadow?: boolean, castShadow?: boolean,
+     *           frustumCulled?: boolean, cullRadius?: number, lod?: Array<{ distance: number, mesh: import("./Mesh.js").Mesh | null }>, tags?: string[] }} [options] */
     constructor(options = {}) {
         super();
         this.name = options.name || "entity";
@@ -17,6 +18,22 @@ export class Entity extends Transform {
         this.visible = options.visible ?? true;
         /** never moves: a ShadowMap draws its shadow once and keeps it (see engine/ShadowMap) */
         this.staticShadow = options.staticShadow ?? false;
+        /** set false to keep this entity out of the sun's shadow map */
+        this.castShadow = options.castShadow ?? true;
+        /** set false to draw this entity even when its bounding sphere is off screen */
+        this.frustumCulled = options.frustumCulled ?? true;
+        /**
+         * World-space radius to cull by, around the entity's position, instead of the mesh's own bounds.
+         * Give one to instanced, skinned or shader-displaced meshes so they can be skipped when off screen.
+         */
+        this.cullRadius = options.cullRadius ?? 0;
+        /**
+         * Levels of detail: `[{ distance: 0, mesh: fine }, { distance: 40, mesh: coarse }, { distance: 150, mesh: null }]`.
+         * Each frame the Renderer sets `mesh` to the last level whose distance the camera has passed
+         * (null = not drawn), so far objects cost fewer triangles. Distances must increase.
+         * @type {Array<{ distance: number, mesh: import("./Mesh.js").Mesh | null }> | null}
+         */
+        this.lod = options.lod || null;
         this.tags = new Set(options.tags || []);
         /** seconds of simulated time since the entity was added */
         this.age = 0;

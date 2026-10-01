@@ -1,5 +1,5 @@
 import { Geometry, indexArray } from "../Geometry.js";
-import { StandardMaterial } from "../Material.js";
+import { StandardMaterial, PBRMaterial } from "../Material.js";
 import { Texture } from "../Texture.js";
 import { Entity } from "../Entity.js";
 import { Mesh, SkinnedMesh } from "../Mesh.js";
@@ -18,12 +18,18 @@ import { mat4, quat } from "../vendor.js";
  *
  * Or take the parts and build things yourself: `asset.meshes`, `asset.skeleton`, `asset.clips`.
  *
- * What is read: meshes (positions, normals, UVs, vertex colours, joints, weights, indices), materials (base
- * colour, base colour texture, emissive, alpha mode, double-sided), textures, the node tree, one skin
- * (its joints become a Skeleton), animations of that skin's joints.
- * What is not: cameras, lights, morph targets, sparse accessors, more than one skin, animation of nodes
- * that aren't joints, metallic/roughness (the engine's lighting is not physically based), compression
- * extensions (Draco, meshopt).
+ * What is read: meshes (positions, normals, tangents, UVs, vertex colours, joints, weights, indices, morph
+ * targets), sparse accessors, materials (base colour and texture, normal map, emissive and its texture,
+ * metallic, roughness and their texture, alpha mode, double-sided), textures, the node tree, one skin (its
+ * joints become a Skeleton of up to SKIN.maxTextureJoints bones), animations of that skin's joints.
+ * What is not: cameras, lights, more than one skin, animation of nodes that aren't joints or of morph
+ * weights, compression extensions (Draco, meshopt).
+ *
+ * Materials: by default each becomes a StandardMaterial (base colour, normal map, emissive) so models keep
+ * the engine's flat, readable look. Pass `{ pbr: true }` for a PBRMaterial that also uses the file's
+ * metallic and roughness.
+ *
+ * Morph targets (shape keys) arrive as `geometry.morphTargets`; blend them with `geometry.applyMorph(weights)`.
  *
  * Coordinates: glTF is Y-up and this engine is Z-up. `instantiate()` returns a root that is already turned
  * upright, so the model stands on the XY plane. If you build from parts, use `asset.upright` (a quaternion).
@@ -40,9 +46,12 @@ const UPRIGHT = quat.setAxisAngle(quat.create(), [1, 0, 0], Math.PI / 2);
 
 /**
  * @param {string} url
- * @param {{ material?: (info: { name: string, color: number[], map: Texture | null, emissive: number[],
+ * @param {{ pbr?: boolean, material?: (info: { name: string, color: number[], opacity: number, map: Texture | null,
+ *           normalMap: Texture | null, normalScale: number, emissive: number[], emissiveMap: Texture | null,
+ *           metallic: number, roughness: number, metallicRoughnessMap: Texture | null,
  *           transparent: boolean, alphaTest: number, doubleSided: boolean, vertexColors: boolean }) => import("../Material.js").Material }} [options]
- *        material: build your own material for each glTF material instead of a StandardMaterial
+ *        pbr: make PBRMaterials (metallic / roughness) instead of StandardMaterials
+ *        material: build your own material for each glTF material
  * @returns {Promise<GLTFAsset>}
  */
 export async function loadGLTF(url, options = {}) {
@@ -82,7 +91,6 @@ export async function parseGLTF(arrayBuffer, options = {}) {
         const key = index * 2 + (raw ? 1 : 0);
         if (accessorCache.has(key)) return accessorCache.get(key);
         const a = json.accessors[index];
-        if (a.sparse) throw new Error("parseGLTF: sparse accessors are not supported");
         const size = SIZES[a.type], Type = COMPONENTS[a.componentType], count = a.count;
         const out = raw ? new Type(count * size) : new Float32Array(count * size);
         if (a.bufferView !== undefined) {
@@ -94,6 +102,23 @@ export async function parseGLTF(arrayBuffer, options = {}) {
             for (let i = 0; i < count; i++) for (let k = 0; k < size; k++) {
                 const v = dv[read](start + i * stride + k * Type.BYTES_PER_ELEMENT, true);
                 out[i * size + k] = norm ? norm(v) : v;
+            }
+        }
+        if (a.sparse) {
+            // a sparse accessor is a base array (or zeros) plus a short list of "element i is really this"
+            const sp = a.sparse, ib = json.bufferViews[sp.indices.bufferView], vb = json.bufferViews[sp.values.bufferView];
+            const idv = new DataView(buffers[ib.buffer]), vdv = new DataView(buffers[vb.buffer]);
+            const readIndex = { 5121: "getUint8", 5123: "getUint16", 5125: "getUint32" }[sp.indices.componentType];
+            const indexSize = COMPONENTS[sp.indices.componentType].BYTES_PER_ELEMENT;
+            const read = { 5120: "getInt8", 5121: "getUint8", 5122: "getInt16", 5123: "getUint16", 5125: "getUint32", 5126: "getFloat32" }[a.componentType];
+            const norm = !raw && a.normalized ? NORMALIZE[a.componentType] : null;
+            const i0 = (ib.byteOffset || 0) + (sp.indices.byteOffset || 0), v0 = (vb.byteOffset || 0) + (sp.values.byteOffset || 0);
+            for (let i = 0; i < sp.count; i++) {
+                const target = idv[readIndex](i0 + i * indexSize, true);
+                for (let k = 0; k < size; k++) {
+                    const v = vdv[read](v0 + (i * size + k) * Type.BYTES_PER_ELEMENT, true);
+                    out[target * size + k] = norm ? norm(v) : v;
+                }
             }
         }
         accessorCache.set(key, out);
@@ -119,24 +144,34 @@ export async function parseGLTF(arrayBuffer, options = {}) {
     // ---- materials
     const materialInfo = (json.materials || []).map((m) => {
         const pbr = m.pbrMetallicRoughness || {}, c = pbr.baseColorFactor || [1, 1, 1, 1];
+        const boost = m.extensions && m.extensions.KHR_materials_emissive_strength ? m.extensions.KHR_materials_emissive_strength.emissiveStrength ?? 1 : 1;
         return {
             name: m.name || "material", color: [c[0], c[1], c[2]], opacity: c[3],
             map: pbr.baseColorTexture ? textures[pbr.baseColorTexture.index] : null,
-            emissive: m.emissiveFactor || [0, 0, 0],
+            normalMap: m.normalTexture ? textures[m.normalTexture.index] : null, normalScale: m.normalTexture ? m.normalTexture.scale ?? 1 : 1,
+            emissive: (m.emissiveFactor || [0, 0, 0]).map((v) => v * boost),
+            emissiveMap: m.emissiveTexture ? textures[m.emissiveTexture.index] : null,
+            metallic: pbr.metallicFactor ?? 1, roughness: pbr.roughnessFactor ?? 1,
+            metallicRoughnessMap: pbr.metallicRoughnessTexture ? textures[pbr.metallicRoughnessTexture.index] : null,
             transparent: m.alphaMode === "BLEND", alphaTest: m.alphaMode === "MASK" ? m.alphaCutoff ?? 0.5 : 0,
             doubleSided: !!m.doubleSided, vertexColors: false,
         };
     });
-    const defaultInfo = { name: "default", color: [1, 1, 1], opacity: 1, map: null, emissive: [0, 0, 0], transparent: false, alphaTest: 0, doubleSided: false, vertexColors: false };
+    const defaultInfo = { name: "default", color: [1, 1, 1], opacity: 1, map: null, normalMap: null, normalScale: 1, emissive: [0, 0, 0], emissiveMap: null,
+        metallic: 1, roughness: 1, metallicRoughnessMap: null, transparent: false, alphaTest: 0, doubleSided: false, vertexColors: false };
     const materialCache = new Map();
     function material(index, vertexColors) {
         const key = (index ?? -1) * 2 + (vertexColors ? 1 : 0);
         if (materialCache.has(key)) return materialCache.get(key);
         const info = { ...(index === undefined ? defaultInfo : materialInfo[index]), vertexColors };
-        const m = options.material ? options.material(info) : new StandardMaterial({
-            color: info.color, opacity: info.opacity, emissive: info.emissive, map: info.map, vertexColors,
+        const common = {
+            color: info.color, opacity: info.opacity, emissive: info.emissive, emissiveMap: info.emissiveMap, map: info.map,
+            normalMap: info.normalMap, normalScale: info.normalScale, vertexColors,
             transparent: info.transparent, alphaTest: info.alphaTest, cull: info.doubleSided ? "none" : "back",
-        });
+        };
+        const m = options.material ? options.material(info)
+            : options.pbr ? new PBRMaterial({ ...common, metallic: info.metallic, roughness: info.roughness, metallicRoughnessMap: info.metallicRoughnessMap })
+            : new StandardMaterial(common);
         m.name = info.name;
         materialCache.set(key, m);
         return m;
@@ -160,9 +195,22 @@ export async function parseGLTF(arrayBuffer, options = {}) {
                 name: mesh.name || "mesh" + mi, positions,
                 normals: at.NORMAL !== undefined ? accessor(at.NORMAL) : flatNormals(positions, indices),
                 uvs: at.TEXCOORD_0 !== undefined ? accessor(at.TEXCOORD_0) : null, colors,
+                tangents: at.TANGENT !== undefined ? accessor(at.TANGENT) : null,
                 joints: at.JOINTS_0 !== undefined ? accessor(at.JOINTS_0) : null,
                 weights: at.WEIGHTS_0 !== undefined ? accessor(at.WEIGHTS_0) : null, indices,
+                // shape keys: offsets from the base mesh. Copies, because accessors are shared and applyMorph edits in place.
+                morphTargets: p.targets ? p.targets.map((t) => ({
+                    positions: t.POSITION !== undefined ? accessor(t.POSITION).slice() : new Float32Array(vertexCount * 3),
+                    normals: t.NORMAL !== undefined ? accessor(t.NORMAL).slice() : null,
+                })) : null,
             });
+            if (geometry.morphTargets) {
+                // the base arrays are about to be edited too, so they must be this geometry's own
+                geometry.positions = geometry.positions.slice();
+                if (geometry.normals) geometry.normals = geometry.normals.slice();
+                geometry.morphWeights = Float32Array.from(mesh.weights || new Array(p.targets.length).fill(0));
+                if (geometry.morphWeights.some((w) => w !== 0)) geometry.applyMorph(geometry.morphWeights);
+            }
             return { geometry, material: material(p.material, !!colors) };
         }),
     }));
