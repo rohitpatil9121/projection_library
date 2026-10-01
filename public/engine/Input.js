@@ -145,6 +145,8 @@ export class Input {
         // don't steal typing from form fields
         const t = e.target;
         if (t && (t.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName))) return;
+        // a focused button or link owns its activation keys (Space / Enter), so keyboard users can press it
+        if (t && /^(BUTTON|A|SUMMARY)$/.test(t.tagName) && (e.code === "Space" || e.code === "Enter" || e.code === "NumpadEnter")) return;
         if (isDown) this._press(e.code); else this._release(e.code);
         if (this._isBound(e.code)) e.preventDefault(); // e.g. Space / arrows would scroll the page
     }
