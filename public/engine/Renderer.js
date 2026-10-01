@@ -13,6 +13,15 @@ import { QUALITY } from "./config.js";
  *   5. per program, per frame: camera + light uniforms are set once (frame stamp)
  *   6. per draw: material uniforms, model matrix, bind VAO, draw (instanced when needed)
  *
+ * Optional stages:
+ *   scene.sky        drawn first as a full-screen background (engine/Sky)
+ *   renderer.postfx  when set and enabled, the scene renders into its HDR target and PostFX finishes
+ *                    the frame (bloom, tone mapping...) on the screen
+ *
+ * Engine uniforms every material may declare: u_camPos, u_camRight, u_camUp, u_camForward, u_proj,
+ * u_time (seconds, set via renderer.time), u_viewport (drawing buffer px), u_model, u_normalMatrix,
+ * u_sunDirection, u_sunColor, u_skyColor, u_groundColor.
+ *
  * `stats` counts draw calls, vertices, triangles and instances for the Performance HUD (P3).
  * @module engine/Renderer
  */
@@ -41,8 +50,13 @@ export class Renderer {
         this.resolutionScale = 1;
         /** @type {Map<string, ShaderProgram>} */
         this.programs = new Map();
-        this.stats = { drawCalls: 0, vertices: 0, triangles: 0, instances: 0, programs: 0, width: 0, height: 0, dpr: 1 };
+        this.stats = { drawCalls: 0, vertices: 0, triangles: 0, instances: 0, programs: 0, width: 0, height: 0, dpr: 1, postPasses: 0 };
         this.frameId = 0;
+        /** seconds, passed to shaders as u_time (Game sets it from the loop) */
+        this.time = 0;
+        /** @type {import("./PostFX.js").PostFX | null} */
+        this.postfx = null;
+        this._viewport = new Float32Array(2);
 
         this._opaque = [];
         this._transparent = [];
@@ -108,15 +122,19 @@ export class Renderer {
         this.frameId++;
         s.drawCalls = s.vertices = s.triangles = s.instances = 0;
 
-        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-        gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+        const post = this.postfx && this.postfx.settings.enabled ? this.postfx : null;
+        if (post) post.begin(this.canvas.width, this.canvas.height);
+        else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, this.canvas.width, this.canvas.height); }
+        this._viewport[0] = this.canvas.width; this._viewport[1] = this.canvas.height;
         const c = scene.clearColor;
         gl.clearColor(c[0], c[1], c[2], c[3]);
+        this._resetState();
         this._setDepthWrite(true);
         gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
         scene.root.updateWorldMatrix(alpha);
         const cam = camera.writeUniforms(this.aspect);
+        if (scene.sky) { scene.sky.draw(gl, cam, this.time); this._resetState(); }
 
         // collect
         const opaque = this._opaque, transparent = this._transparent;
@@ -138,7 +156,15 @@ export class Renderer {
         for (const e of transparent) this._draw(e, scene, cam);
 
         gl.bindVertexArray(null);
-        this._state.program = null;
+        if (post) { post.end(this.time); this.stats.postPasses = post.passes; }
+        else this.stats.postPasses = 0;
+        this._resetState();
+    }
+
+    /** Forget cached GL state (after anything else touched the context). */
+    _resetState() {
+        const st = this._state;
+        st.program = st.cull = st.blend = st.depthTest = st.depthWrite = null;
     }
 
     _collect(node, opaque, transparent) {
@@ -175,6 +201,8 @@ export class Renderer {
             program.set("u_sunColor", scene.sunColor);
             program.set("u_skyColor", scene.skyColor);
             program.set("u_groundColor", scene.groundColor);
+            program.set("u_time", this.time);
+            program.set("u_viewport", this._viewport);
         }
         program.setAll(mat.uniforms());
         program.set("u_model", entity.worldMatrix);
@@ -185,9 +213,10 @@ export class Renderer {
         this._setDepthTest(mat.depthTest);
         this._setDepthWrite(mat.depthWrite);
 
-        mesh.bindVAO(gl);
-        const mode = geo.mode === "lines" ? gl.LINES : gl.TRIANGLES;
         const n = geo.drawCount;
+        mesh.bindVAO(gl);
+        const mode = geo.mode === "triangles" ? gl.TRIANGLES : geo.mode === "lines" ? gl.LINES : geo.mode === "lineStrip" ? gl.LINE_STRIP : gl.POINTS;
+        if (n <= 0) return;
         if (mesh.isInstanced) {
             if (geo.indices) gl.drawElementsInstanced(mode, n, geo.indexType, 0, mesh.count);
             else gl.drawArraysInstanced(mode, 0, n, mesh.count);
@@ -235,6 +264,7 @@ export class Renderer {
 
     dispose() {
         this._resizeObserver?.disconnect();
+        this.postfx?.dispose();
         for (const p of this.programs.values()) p.dispose();
         this.programs.clear();
     }

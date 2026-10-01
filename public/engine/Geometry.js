@@ -11,7 +11,9 @@ import { ATTRIB } from "./config.js";
 export class Geometry {
     /**
      * @param {{ positions: Float32Array, normals?: Float32Array, uvs?: Float32Array, colors?: Float32Array,
-     *           indices?: Uint16Array | Uint32Array, mode?: "triangles" | "lines", name?: string }} data
+     *           indices?: Uint16Array | Uint32Array, mode?: "triangles" | "lines" | "lineStrip" | "points",
+     *           dynamic?: boolean, name?: string }} data
+     *        dynamic: the arrays are rewritten often (particles, trails); uses DYNAMIC_DRAW and bufferSubData.
      */
     constructor(data) {
         this.name = data.name || "geometry";
@@ -20,9 +22,11 @@ export class Geometry {
         this.uvs = data.uvs || null;
         this.colors = data.colors || null;
         this.indices = data.indices || null;
-        /** @type {"triangles" | "lines"} */
+        /** @type {"triangles" | "lines" | "lineStrip" | "points"} */
         this.mode = data.mode || "triangles";
+        this.dynamic = data.dynamic ?? false;
         this.vertexCount = this.positions.length / 3;
+        /** how many vertices (or indices) to draw; lower it to draw only the live part of a dynamic buffer */
         this.drawCount = this.indices ? this.indices.length : this.vertexCount;
         this.version = 0;
         /** per-context GPU state */
@@ -56,11 +60,17 @@ export class Geometry {
             this._gpu.set(gl, g);
         }
         const upload = g.version !== this.version;
+        const usage = this.dynamic ? gl.DYNAMIC_DRAW : gl.STATIC_DRAW;
         const attr = (key, data, size, loc) => {
             if (!data) { gl.disableVertexAttribArray(loc); return; }
-            if (!g.buffers[key]) g.buffers[key] = gl.createBuffer();
+            const fresh = !g.buffers[key];
+            if (fresh) g.buffers[key] = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, g.buffers[key]);
-            if (upload) gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW);
+            // dynamic buffers keep their allocation and only rewrite contents
+            if (upload) {
+                if (this.dynamic && !fresh) gl.bufferSubData(gl.ARRAY_BUFFER, 0, data);
+                else gl.bufferData(gl.ARRAY_BUFFER, data, usage);
+            }
             gl.enableVertexAttribArray(loc);
             gl.vertexAttribPointer(loc, size, gl.FLOAT, false, 0, 0);
         };

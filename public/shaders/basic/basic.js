@@ -2,7 +2,7 @@ import { projection } from "../chunks/projection.js";
 
 /**
  * Basic material shader (P1): unlit or Lambert with a hemisphere ambient + one directional light.
- * Variants via defines: LIT, VERTEX_COLORS, INSTANCED.
+ * Variants via defines: LIT, VERTEX_COLORS, INSTANCED, RIM (fresnel rim light for silhouettes).
  * P2 replaces the lighting with the full Light system; the projection stays the same.
  * @module shaders/basic
  */
@@ -50,6 +50,11 @@ uniform vec3 u_sunDirection;  // normalized, pointing toward the light
 uniform vec3 u_sunColor;
 uniform vec3 u_skyColor;
 uniform vec3 u_groundColor;
+#ifdef RIM
+uniform vec3 u_camPos;
+uniform vec3 u_rimColor;
+uniform float u_rimPower;
+#endif
 
 varying vec3 v_normal;
 varying vec3 v_world;
@@ -75,6 +80,12 @@ void main() {
     vec3 ambient = mix(u_groundColor, u_skyColor, n.z * 0.5 + 0.5);
     float diffuse = max(dot(n, u_sunDirection), 0.0);
     rgb = rgb * (ambient + u_sunColor * diffuse);
+#endif
+#ifdef RIM
+    // fresnel: strongest where the surface turns away from the viewer (the silhouette)
+    vec3 viewDir = normalize(u_camPos - v_world);
+    float fres = pow(1.0 - max(dot(normalize(v_normal), viewDir), 0.0), u_rimPower);
+    rgb += u_rimColor * fres;
 #endif
     gl_FragColor = vec4(rgb + u_emissive, base.a);
 }

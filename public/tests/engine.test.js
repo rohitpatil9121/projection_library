@@ -348,3 +348,84 @@ test("Space compat: subclass swaps in its own program (Neon Rush pattern)", () =
     assert(px[1] > 200, `custom program drew green, got ${px}`);
     canvas.remove();
 });
+
+// ------------------------------------------------------------------ P-ORBITAL systems: PostFX, Sky, particles, trail, tween, juice
+import { PostFX, Sky, ParticleSystem, Trail, Tweens, Ease, Juice, GlowMaterial, ShaderMaterial, projectionChunk } from "../engine/index.js";
+
+for (const webgl2 of [true, false]) {
+    test(`PostFX + Sky + particles + trail render without GL errors (${webgl2 ? "WebGL2" : "WebGL1"})`, () => {
+        const canvas = offscreen(160, 90);
+        const r = new Renderer(canvas, { preferWebGL2: webgl2, preserveDrawingBuffer: true, autoResize: false });
+        r.postfx = new PostFX(r, { bloom: { intensity: 1.5, threshold: 0.8 } });
+        const scene = new Scene();
+        scene.sky = new Sky();
+        const star = scene.add(new Entity({ mesh: new Mesh(primitives.sphere(1), new BasicMaterial({ lit: false, color: [4, 3, 1] })) }));
+        const halo = scene.add(new Entity({ mesh: new Mesh(primitives.sphere(1.6), new GlowMaterial({ color: [1, 0.6, 0.2] })) }));
+        const ps = scene.add(new ParticleSystem({ capacity: 500 }));
+        ps.emit(200, { position: [0, 0, 0], speed: 3, life: [1, 2], size: [0.3, 0.1], color: [2, 1, 0.5, 1] });
+        ps.update(1 / 60);
+        const trail = scene.add(new Trail({ length: 50, color: [0.5, 1, 2] }));
+        for (let i = 0; i < 50; i++) trail.push(Math.cos(i * 0.2) * 3, Math.sin(i * 0.2) * 3, 0);
+        const cam = new Camera({ distance: 8, pitch: 0.4 }); cam.update(0);
+        r.render(scene, cam);
+        assert(r.gl.getError() === r.gl.NO_ERROR, "no GL error");
+        assert(ps.alive === 200 && ps.geometry.drawCount === 200, "particles alive");
+        assert(r.stats.postPasses >= 8, `post passes ran (${r.stats.postPasses})`);
+        const px = centrePixel(r.gl);
+        assert(px[0] > 200, `bright bloomed centre, got ${px}`);
+        void star; void halo;
+        r.dispose(); canvas.remove();
+    });
+}
+
+test("PostFX reports whether it got an HDR target", () => {
+    const canvas = offscreen(64, 64);
+    const r = new Renderer(canvas, { autoResize: false });
+    r.postfx = new PostFX(r);
+    r.render(new Scene(), new Camera());
+    assert(typeof r.postfx.hdr === "boolean");
+    r.dispose(); canvas.remove();
+});
+
+test("ParticleSystem recycles dead particles without growing", () => {
+    const ps = new ParticleSystem({ capacity: 100 });
+    ps.emit(150, { position: [0, 0, 0], life: [0.1, 0.1] });
+    assert(ps.alive === 100, "capped at capacity");
+    for (let i = 0; i < 10; i++) ps.update(1 / 60);
+    assert(ps.alive === 0, "all expired");
+    ps.emit(10, { position: [1, 2, 3], life: [1, 1], velocity: [1, 0, 0] });
+    ps.update(0.5);
+    near(ps.px[0], 1.5, 1e-5, "moved with velocity");
+});
+
+test("ShaderMaterial compiles custom GLSL with the projection chunk", () => {
+    const canvas = offscreen(32, 32);
+    const r = new Renderer(canvas, { autoResize: false });
+    const mat = new ShaderMaterial({ name: "test-custom", vertex: projectionChunk + "attribute vec3 a_position; uniform mat4 u_model; void main(){ gl_Position = projectLab((u_model * vec4(a_position,1.0)).xyz); }",
+        fragment: "uniform float u_k; void main(){ gl_FragColor = vec4(u_k, 0.0, 0.0, 1.0); }", uniforms: { u_k: 1 } });
+    const scene = new Scene(); scene.add(new Entity({ mesh: new Mesh(primitives.box(2, 2, 2), mat) }));
+    const cam = new Camera({ distance: 4 }); cam.update(0);
+    r.render(scene, cam);
+    assert(r.gl.getError() === r.gl.NO_ERROR);
+    r.dispose(); canvas.remove();
+});
+
+test("Tweens ease values and fire onComplete", () => {
+    const tw = new Tweens(), o = { x: 0 };
+    let done = false;
+    tw.to(o, { x: 10 }, { duration: 1, ease: Ease.linear, onComplete: () => (done = true) });
+    tw.update(0.5); near(o.x, 5, 1e-9);
+    tw.update(0.6); near(o.x, 10, 1e-9);
+    assert(done && tw.active.length === 0);
+    near(Ease.outBack(1), 1, 1e-9); near(Ease.inOutCubic(0.5), 0.5, 1e-9);
+});
+
+test("Juice: trauma decays and shake respects reduced motion", () => {
+    const cam = new Camera();
+    const j = new Juice({ camera: cam, reducedMotion: false });
+    j.shake(0.8); j.update(0.016);
+    assert(Math.hypot(...cam.shakeOffset) > 0, "shakes");
+    j.update(2); assert(j.trauma === 0, "decayed");
+    const calm = new Juice({ camera: cam, reducedMotion: true });
+    calm.shake(1); assert(calm.trauma === 0, "no shake with reduced motion");
+});

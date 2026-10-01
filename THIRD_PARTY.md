@@ -10,12 +10,12 @@ D3 in ARCHITECTURE.md). Every entry below was checked against its repository's L
 | express | ^5.2.1 | MIT | https://github.com/expressjs/express | Local dev server (`npm start`) | `index.js` (not deployed) |
 | dotenv | ^17.3.1 | BSD-2-Clause | https://github.com/motdotla/dotenv | Reads `PORT` for the dev server | `index.js` (not deployed) |
 | gl-matrix | 3.4.4 | MIT | https://github.com/toji/gl-matrix | Model transforms (vec3, quat, mat3, mat4) for Transform and instancing. Camera/projection maths stay ours. | Vendored: `public/vendor/gl-matrix@3.4.4/` (ESM build + LICENSE.md), imported only via `public/engine/vendor.js` |
+| ZzFX | 1.3.2 | MIT | https://github.com/KilledByAPixel/ZzFX | Procedural sound effects (sample generator only; playback uses our own mixer) | Vendored: `public/vendor/zzfx@1.3.2/` (ZzFX.js + LICENSE), lazy-imported by `public/engine/Audio.js` |
 
 ## Planned (to be vendored into `public/vendor/` when the phase that needs it lands)
 
 | Name | Version (pinned) | License | URL | Purpose | Phase | Wrapped by |
 |---|---|---|---|---|---|---|
-| ZzFX | 1.3.2 | MIT | https://github.com/KilledByAPixel/ZzFX | Procedural sound effects, no audio files | P4 | `engine/Audio.js` |
 | ZzFXM | 2.0.3 | MIT | https://github.com/keithclark/ZzFXM | Tiny procedural music | P4 | `engine/Audio.js` |
 | Tweakpane | 4.0.5 | MIT | https://github.com/cocopon/tweakpane | Inspector / debug sliders and presets | P3 | `engine/Debug.js` |
 | simplex-noise | 4.0.3 | MIT | https://github.com/jwagner/simplex-noise.js | CPU noise: terrain, camera shake, turbulence | P4 | `engine/Noise.js` |
@@ -33,7 +33,13 @@ D3 in ARCHITECTURE.md). Every entry below was checked against its repository's L
 
 ## Ported algorithms and shaders
 
-None yet. Every ported algorithm or shader gets a header comment with its source URL and license, and
+| What | Source | License / status | Where |
+|---|---|---|---|
+| ACES filmic tone-mapping curve (formula) | Krzysztof Narkowicz, 2016, https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/ | Published formula, reimplemented | `shaders/postprocessing/post.js` |
+| Easing equations | Robert Penner | Published formulas, reimplemented | `engine/Tween.js` |
+| Trauma-based camera shake (idea) | Squirrel Eiserloh, GDC 2016 | Technique, reimplemented | `engine/Juice.js` |
+
+Every ported algorithm or shader gets a header comment with its source URL and license, and
 a row here. Shadertoy code is **not** used unless its author states a compatible license (the default
 Shadertoy license is CC BY-NC-SA, which is not allowed).
 

@@ -4,6 +4,8 @@ import { Scene } from "./Scene.js";
 import { Camera } from "./Camera.js";
 import { Input } from "./Input.js";
 import { Loop } from "./Loop.js";
+import { Tweens } from "./Tween.js";
+import { Juice } from "./Juice.js";
 
 /**
  * Game: the high-level facade that wires Renderer, Scene, Camera, Input and Loop together.
@@ -37,6 +39,10 @@ export class Game {
         this.scene = new Scene();
         this.camera = options.camera || new Camera();
         this.input = new Input({ pointerTarget: this.canvas });
+        /** tweens advance in real time every rendered frame (UI and camera moves keep working while paused) */
+        this.tweens = new Tweens();
+        /** camera shake / hit-stop; reads prefers-reduced-motion */
+        this.juice = new Juice({ camera: this.camera });
         /** @type {Array<(dt: number, game: Game) => void>} */
         this._updaters = [];
         /** @type {Array<(frameDelta: number, alpha: number, game: Game) => void>} */
@@ -66,6 +72,7 @@ export class Game {
     get time() { return this.loop ? this.loop.time : 0; }
 
     _update(dt) {
+        if (this.juice.frozen) return; // hit-stop: hold the simulation for a few frames
         this.scene.snapshot();
         this.input.beginStep();
         for (let i = 0; i < this._updaters.length; i++) this._updaters[i](dt, this);
@@ -74,6 +81,9 @@ export class Game {
     }
 
     _render(alpha, frameDelta) {
+        this.tweens.update(frameDelta);
+        this.juice.update(frameDelta);
+        this.renderer.time = this.loop.realTime;
         for (let i = 0; i < this._renderers.length; i++) this._renderers[i](frameDelta, alpha, this);
         this.camera.update(frameDelta);
         this.renderer.render(this.scene, this.camera, alpha);
