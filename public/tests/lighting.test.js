@@ -150,6 +150,23 @@ test("StandardMaterial: texture, sun shadow and point light", () => {
         const shadowed = centrePixel(r.gl);
         assert(shadowed[0] < 40, `floor under the slab is in shadow, got ${shadowed}`);
     }
+    // a caster that never moves is drawn into the shadow map once and kept
+    slab.staticShadow = true;
+    scene.shadow.cache = true;
+    r.render(scene, cam);
+    if (r.caps.webgl2) {
+        assert(scene.shadow.staticRedraws === 1, "static caster drawn into the kept copy");
+        r.render(scene, cam);
+        assert(r.stats.shadowCalls === 1 && scene.shadow.staticRedraws === 1, `second frame draws only the mover (${r.stats.shadowCalls})`);
+        if (scene.shadow.supported) assert(centrePixel(r.gl)[0] < 40, "the kept shadow is still there");
+        slab.setPosition(40, 0, 3);
+        r.render(scene, cam);
+        assert(scene.shadow.staticRedraws === 2, "moving a static caster redraws the kept copy");
+        if (scene.shadow.supported) assert(centrePixel(r.gl)[0] > 200, "and its shadow moved away with it");
+        slab.setPosition(0, 0, 3);
+        r.render(scene, cam);
+    }
+    slab.staticShadow = false; scene.shadow.cache = false;
     scene.shadow.enabled = false;
     r.render(scene, cam);
     assert(centrePixel(r.gl)[0] > 200, "lit again with shadows off");

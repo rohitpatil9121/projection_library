@@ -8,13 +8,15 @@ import { Transform } from "./Transform.js";
  * @module engine/Entity
  */
 export class Entity extends Transform {
-    /** @param {{ name?: string, mesh?: import("./Mesh.js").Mesh | null, visible?: boolean, tags?: string[] }} [options] */
+    /** @param {{ name?: string, mesh?: import("./Mesh.js").Mesh | null, visible?: boolean, staticShadow?: boolean, tags?: string[] }} [options] */
     constructor(options = {}) {
         super();
         this.name = options.name || "entity";
         /** @type {import("./Mesh.js").Mesh | null} */
         this.mesh = options.mesh || null;
         this.visible = options.visible ?? true;
+        /** never moves: a ShadowMap draws its shadow once and keeps it (see engine/ShadowMap) */
+        this.staticShadow = options.staticShadow ?? false;
         this.tags = new Set(options.tags || []);
         /** seconds of simulated time since the entity was added */
         this.age = 0;
