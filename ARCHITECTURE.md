@@ -251,7 +251,7 @@ Mid-range Android numbers need a real device.
 ### 7.5 Known limits (tracked for later phases)
 - Normals use the model matrix directly; non-uniform scale needs the inverse-transpose (Light system, P2).
 - Virtual joystick for mobile is deferred to P9 (mobile pass); touch drag and pinch work now.
-- Prime Walk still runs on `Space`; it moves to the engine (instanced, 100k+) in P8.
+- Prime Walk still runs on `Space`; it moves to the engine (instanced, 100k+) in P8. *(Done in §9: `prime-walk.html`.)*
 
 ## 8. Light system, textures, models and animation
 
@@ -310,13 +310,130 @@ by the static cache, then moved), a point light alone, and a skinned mesh with s
 WebGL2 and the WebGL1 fallback.
 
 ### 8.5 Known limits
-- One skin per glTF file; no morph targets, sparse accessors or compression extensions.
-- 32 joints per skeleton (a `mat4` uniform array); some WebGL1 devices have too few vertex uniforms for that.
-- One shadow-casting light (the sun), one shadow map, no cascades: keep `ShadowMap.extent` tight.
+Four of these were closed in §9 and are struck through here so the history stays readable.
+- One skin per glTF file; no compression extensions. ~~No morph targets or sparse accessors.~~
+- ~~32 joints per skeleton.~~ Skeletons over 32 joints now go through a float texture (§9.4).
+- One shadow-casting light (the sun). ~~One shadow map, no cascades.~~
 - The static shadow cache is off by default. It was built to save redrawing NIGHT MARKET's street from the
   sun every frame, and measuring showed it doesn't: on an Intel UHD the street's 150,000 triangles cost about
   0.5 ms in the depth pass, while copying the kept depth into a 2048² map cost about 0.9 ms (a framebuffer
   blit was far worse, around 9 ms). It should pay off only where the static casters are much heavier.
-- SSAO is not depth-aware when it blurs, so thin objects get a faint halo.
-- Instanced meshes still shade with the model matrix (correct for uniform scale and for boxes); non-instanced
-  meshes now use the inverse-transpose normal matrix, which closes the limit noted in §7.5.
+- ~~SSAO is not depth-aware when it blurs, so thin objects get a faint halo.~~
+- ~~Instanced meshes still shade with the model matrix.~~ Non-instanced meshes use the inverse-transpose normal
+  matrix, which closes the limit noted in §7.5; instanced ones now do the equivalent per axis (§9.3).
+
+## 9. Scale, materials, and the site
+
+Added to take the engine from "a lit street" to "a world you can walk across", and to make what exists
+visible: until now the site's front page was Prime Walk on the first renderer, and nothing linked to the
+engine's examples.
+
+### 9.1 Modules
+
+| Module | What it adds |
+|---|---|
+| `engine/Renderer.js` | Frustum culling by bounding sphere; `Entity.lod`; casters collected before culling |
+| `engine/ShadowMap.js` | `cascades: 1..3`: boxes fitted to slices of the camera's view, in one atlas; casters culled per box |
+| `engine/Material.js` | `PBRMaterial`; normal and emissive maps on `StandardMaterial` |
+| `shaders/chunks/lighting.js` | Cascade selection in `labShadow`; `labLightPBR` (GGX, two-tone environment) |
+| `engine/Geometry.js` | `computeTangents()`, `applyMorph()`, bounds that follow `markDirty()` |
+| `engine/Mesh.js`, `engine/Animation.js` | Skinning matrices through a float texture for skeletons over 32 joints |
+| `engine/Collision.js` | Rays against spheres, boxes, planes, triangles; overlaps; `slideCircle`; `Scene.raycast` |
+| `engine/TouchControls.js` | On-screen joystick and buttons feeding Input axes and actions |
+| `engine/DebugOverlay.js` | Frame time, draw calls, culled count, triangles, quality switch |
+| `engine/PostFX.js` | Depth-aware occlusion blur; Reinhard tone mapping; saturation and contrast |
+| `engine/loaders/GLTF.js` | Sparse accessors, tangents, morph targets, metallic / roughness with `{ pbr: true }` |
+
+### 9.2 Culling and levels of detail
+
+- **A sphere, tested in camera space.** The camera already has its three axes, so the test is three dot
+  products per mesh and a comparison against the slopes of the side planes. No frustum planes are extracted
+  from a matrix, because there is no matrix.
+- **Only meshes with trustworthy bounds are culled.** Instanced, skinned and dynamic meshes, and anything
+  drawn by a `ShaderMaterial`, are always drawn unless the entity carries a `cullRadius`. Drawing something
+  unnecessary is a cost; not drawing something visible is a bug.
+- **Shadow casters are collected before culling.** A tree behind the camera still shadows the path ahead.
+  Each shadow box then culls casters against its own sides (not its ends: a caster above the box still casts
+  into it).
+- **LOD swaps the entity's mesh.** `entity.lod` is a list of distances; the Renderer writes `entity.mesh`.
+  A `null` level means "not drawn", which is how distant chunks disappear into the fog.
+
+Counted on `examples/open-world.html` (155 meshes, 2,300 trees in 144 chunks, 1600×900, camera in the
+clearing): with culling and LOD the main pass is 55 draw calls and 33,000 triangles; with both off it is 155
+draw calls and 231,000 triangles. The shadow pass draws 141 casters across three cascades instead of the
+432 it would without per-box culling. Frame times are not quoted: `gl.finish()` did not give stable
+numbers on this machine (Intel UHD, ANGLE/D3D11), and a count is a fact where a timing would be a guess.
+
+### 9.3 Cascaded shadows
+
+- **One atlas, tiles side by side.** GLSL ES 1.00 has no texture arrays, and one texture keeps the WebGL1
+  fallback on the same shader. The fragment picks its tile from its depth along the camera's forward axis.
+- **Boxes are fitted to spheres.** The smallest sphere around a slice of the frustum has the same radius
+  whichever way the camera faces, so the box never changes size and shadow edges don't swim as you turn.
+- **Centres snap to texels.** The box moves in whole-texel steps in the sun's own axes, so edges don't crawl
+  as you walk.
+- **The same bias in world units for every cascade.** Far cascades are deeper boxes; the normalized depth
+  bias is scaled down to match, and the normal offset grows with the texel size.
+- **The static cache is for the fixed box only.** A cascade's box follows the camera, so a kept copy would be
+  stale on every frame the camera moves.
+- **Instanced normals.** For a matrix that rotates and scales without shear, the inverse-transpose is each
+  axis divided by its squared length. The instanced vertex shader does that, so stretched instances shade
+  correctly without inverting a matrix per vertex.
+
+### 9.4 Materials and skinning
+
+- **PBR shares the Standard shader** behind a `PBR` define, so palettes, vertex colours, instancing, skinning
+  and alpha test all work with it and there is still one program per variant.
+- **The environment is two colours.** Reflections use the scene's sky and ground colours, blurred toward
+  each other by roughness, weighted by Karis's analytic environment-BRDF fit. No cube maps: nothing to
+  download, and it matches the ambient the scene already has. `envIntensity` is the artistic control.
+- **No gamma-correct pipeline.** Colours are used as given and tone-mapped at the end, as before. Introducing
+  linear-light shading would change the look of every existing game.
+- **Tangents are a vertex attribute**, computed from UVs when a normal map is first used. Screen-space
+  derivatives would have needed an extension on WebGL1.
+- **glTF models keep the Standard look by default.** `{ pbr: true }` opts in to metallic and roughness, so
+  existing games that load models are unchanged.
+- **Joint textures only when needed.** Up to 32 joints the matrices are still a uniform array (no texture
+  upload, works everywhere). Above that, one RGBA32F row of four texels per joint, uploaded once per pose
+  even though the shadow pass and the main pass both read it.
+
+### 9.5 The site
+
+- `index.html` is a landing page whose hero is the engine running (`site/hero.js`: Renderer, Scene, Camera
+  and Loop used directly, so the page keeps its wheel and vertical swipes). Prime Walk moved to
+  `prime-walk.html` on the engine (250,000 instanced cubes, one draw call); the original is kept as
+  `prime-walk-classic.html`.
+- `examples/` has a gallery and one self-contained HTML file per example.
+- `docs/` has a hand-written guide and `api.html`, generated from the JSDoc in the source by
+  `tools/build-docs.mjs`.
+- Thumbnails and the link-preview image are captured from the pages themselves by `tools/shots.mjs`.
+- Fonts are self-hosted (Space Grotesk, JetBrains Mono; OFL, decision D3).
+
+### 9.6 Tools and CI
+
+- `tools/chrome.mjs` drives headless Chrome over the DevTools protocol with Node's built-in WebSocket: no
+  Puppeteer or Playwright. `npm test` runs the browser test page with software WebGL, so it works on a CI
+  machine with no GPU.
+- The Pages workflow runs the tests first and deploys only if they pass; it also builds the single-file
+  bundle (`tools/build.mjs`, esbuild, the one build-time dependency) and the API reference.
+
+### 9.7 Tests
+
+`public/tests/world.test.js` adds 17 browser tests (57 in total, all passing on WebGL2 and the WebGL1
+fallback, on a GPU and on the software renderer): culling and its opt-outs, shadows from off-screen casters,
+bounds after `markDirty()`, LOD, cascades (shadow at 0 and at 70 units, box size steady under rotation,
+switching back to a fixed box), normal maps and generated tangents, PBR on both contexts, instanced normals
+under non-uniform scale, Reinhard and saturation, a 40-joint skeleton through the joint texture, glTF sparse
+accessors, morph targets and PBR materials, every Collision function, `Scene.raycast`, TouchControls driving
+Input, and the DebugOverlay.
+
+### 9.8 Known limits
+
+- One shadow-casting light (the sun). Point lights do not cast shadows; there are no spot lights.
+- Cascades are not blended at their boundaries; a change in sharpness can be seen on large flat ground.
+- PBR reflections are the two-tone environment only: no cube maps, no screen-space reflections.
+- Morph targets are blended on the CPU and are per geometry, not per instance; morph weight animation in
+  glTF is not read.
+- Draco and meshopt compression are not supported; one skin per glTF file.
+- Collision is tests and one sliding helper, not a physics engine.
+- No depth of field.

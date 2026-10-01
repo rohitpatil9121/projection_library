@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Getting started · Projection Lab</title>
+    <meta name="description" content="How to build a scene with the Projection Lab WebGL engine: setup, entities, materials, lights and shadows, models, input, collision and performance.">
+    <meta property="og:title" content="Projection Lab: getting started">
+    <meta property="og:description" content="Setup, entities, materials, lights and shadows, models, input, collision and performance.">
+    <meta property="og:image" content="https://rohitpatil9121.github.io/projection_library/assets/shots/og.jpg">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="../site/site.css">
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav">
+        <div class="wrap">
+            <a class="brand" href="../"><img src="../favicon.svg" alt="" width="26" height="26"><span>Projection Lab</span></a>
+            <nav aria-label="Main">
+                <a href="../examples/">Examples</a>
+                <a href="./" aria-current="page">Docs</a>
+                <a href="../#games">Games</a>
+                <a href="https://github.com/rohitpatil9121/projection_library">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <div class="wrap docs">
+        <aside aria-label="On this page">
+            <h2>Getting started</h2>
+            <a href="#setup">Setup</a>
+            <a href="#first-scene">First scene</a>
+            <a href="#world">The world</a>
+            <a href="#loop">The loop</a>
+            <a href="#materials">Materials</a>
+            <a href="#light">Light and shadow</a>
+            <a href="#models">Models and animation</a>
+            <a href="#input">Input</a>
+            <a href="#collision">Collision and picking</a>
+            <a href="#performance">Performance</a>
+            <a href="#shaders">Your own shaders</a>
+            <a href="#support">Browser support</a>
+            <h2>Reference</h2>
+            <a href="api.html">API reference</a>
+            <a href="../examples/">Examples</a>
+            <a href="../tests/">Tests</a>
+        </aside>
+
+        <article id="main">
+            <h1>Getting started</h1>
+            <p class="lede">Projection Lab is a folder of ES modules. There is no package to install and nothing to compile. This page walks from an empty folder to a lit, animated scene.</p>
+
+            <h2 id="setup">Setup</h2>
+            <p>Copy three folders from <code>public/</code> in the repository next to your page: <code>engine/</code>, <code>shaders/</code> and <code>vendor/</code> (which holds gl-matrix, used for model transforms). Keep them side by side; they import each other by relative path.</p>
+            <div class="code"><div class="bar"><span>your-game/</span></div><pre><code>index.html
+main.js
+engine/      the engine
+shaders/     its GLSL, as JavaScript modules
+vendor/      gl-matrix 3.4.4 (MIT)</code></pre></div>
+            <p>Browsers only load modules over HTTP, so serve the folder with any static server. The repository ships one with no dependencies: <code>node tools/serve.mjs</code>.</p>
+            <p>If you would rather load one file, the site publishes the whole engine bundled and minified at <code>dist/projection-lab.min.js</code> (build it yourself with <code>npm run build</code>). It exports the same names as <code>engine/index.js</code>.</p>
+
+            <h2 id="first-scene">First scene</h2>
+            <div class="code"><div class="bar"><span>index.html</span><button type="button" data-copy>Copy</button></div><pre><code data-lang="js">&lt;canvas style="width:100vw;height:100vh;display:block"&gt;&lt;/canvas&gt;
+&lt;script type="module" src="main.js"&gt;&lt;/script&gt;</code></pre></div>
+            <div class="code"><div class="bar"><span>main.js</span><button type="button" data-copy>Copy</button></div><pre><code data-lang="js">import { Game, Entity, Mesh, PBRMaterial, StandardMaterial, ShadowMap, primitives } from "./engine/index.js";
+
+const game = new Game({ canvas: document.querySelector("canvas") });
+game.scene.shadow = new ShadowMap({ extent: [8, 8] });
+
+const floor = new Mesh(primitives.plane(20, 20), new StandardMaterial({ color: [0.8, 0.8, 0.85] }));
+const gold = new Mesh(primitives.sphere(1, 48, 32), new PBRMaterial({ color: [1, 0.77, 0.34], metallic: 1, roughness: 0.25 }));
+
+game.add(new Entity({ mesh: floor }));
+const ball = game.add(new Entity({ mesh: gold }));
+ball.setPosition(0, 0, 1.5);
+
+game.onUpdate(() => ball.setYaw(game.time));
+game.start();</code></pre></div>
+            <p>That is <a href="../examples/first-scene.html">this page</a>. <code>Game</code> creates the renderer, a scene, an orbit camera, input and the loop. If WebGL is not available it shows a readable message instead of a blank canvas, and <code>game.failed</code> is true.</p>
+
+            <h2 id="world">The world</h2>
+            <ul>
+                <li><strong>Z is up.</strong> The ground is the XY plane. Models loaded from glTF (which is Y-up) are stood upright for you.</li>
+                <li><strong>Units are yours.</strong> The examples treat one unit as a metre.</li>
+                <li><strong>Colours are arrays of 0 to 1</strong>, such as <code>[1, 0.5, 0.2]</code>. Values above 1 are allowed and are what bloom picks up.</li>
+                <li><strong>An Entity is a transform that can carry a mesh.</strong> Entities nest: <code>parent.add(child)</code>. A <code>Mesh</code> is a geometry plus a material, and both can be shared between many entities.</li>
+            </ul>
+            <div class="code"><pre><code data-lang="js">const arm = game.add(new Entity({ mesh: new Mesh(primitives.box(0.3, 0.3, 2), steel) }));
+arm.setPosition(4, 0, 1).setRotationEuler(0, 0.4, 0).setScale(1.5);
+const hand = arm.add(new Entity({ mesh: new Mesh(primitives.sphere(0.3), steel) }));   // moves with the arm
+hand.setPosition(0, 0, 1.2);
+arm.onUpdate((dt, e) => e.setYaw(e.age));        // behaviour on the entity itself</code></pre></div>
+            <p>The camera orbits a <code>target</code> at a <code>distance</code>, steered by <code>yaw</code> and <code>pitch</code>. Call <code>camera.setFollow(entity)</code> to trail something, or set <code>camera.mode = "firstPerson"</code> and move <code>camera.position</code>.</p>
+
+            <h2 id="loop">The loop</h2>
+            <p>The simulation always advances in steps of exactly 1/60 s, whatever the screen's refresh rate, so gameplay is the same on every machine. Rendering happens once per screen refresh and blends between the last two steps, so motion stays smooth at 144 Hz.</p>
+            <table>
+                <thead><tr><th>Register</th><th>Runs</th><th>Use it for</th></tr></thead>
+                <tbody>
+                    <tr><td><code>game.onUpdate((dt) =&gt; …)</code></td><td>every fixed step</td><td>gameplay, physics, reading input</td></tr>
+                    <tr><td><code>game.onRender((frameDelta) =&gt; …)</code></td><td>every drawn frame</td><td>animation playback, HUD text, camera feel</td></tr>
+                    <tr><td><code>entity.onUpdate((dt, e) =&gt; …)</code></td><td>every fixed step</td><td>behaviour that belongs to one object</td></tr>
+                </tbody>
+            </table>
+            <p><code>game.pause()</code> freezes the simulation and keeps drawing. <code>game.loop.timeScale = 0.3</code> is slow motion. <code>game.tweens.to(target, { x: 5 }, { duration: 0.6 })</code> animates any numeric property.</p>
+
+            <h2 id="materials">Materials</h2>
+            <table>
+                <thead><tr><th>Material</th><th>What it is</th></tr></thead>
+                <tbody>
+                    <tr><td><code>BasicMaterial</code></td><td>Unlit, or lit by the sun and ambient only. The cheapest; good for huge instanced fields.</td></tr>
+                    <tr><td><code>StandardMaterial</code></td><td>The full light system: sun with shadows, point lights, fog. Colour texture, normal map, emissive map, vertex colours, palettes.</td></tr>
+                    <tr><td><code>PBRMaterial</code></td><td>The same, lit from <code>metallic</code> and <code>roughness</code>. Reflects the scene's sky and ground colours.</td></tr>
+                    <tr><td><code>ShaderMaterial</code></td><td>Your own GLSL, with the engine's projection and lighting available as chunks.</td></tr>
+                    <tr><td><code>GlowMaterial</code></td><td>An additive halo for a slightly larger copy of a mesh.</td></tr>
+                </tbody>
+            </table>
+            <div class="code"><pre><code data-lang="js">const bricks = await Texture.load("assets/bricks.png");
+const bumps = await Texture.load("assets/bricks-normal.png");
+const wall = new PBRMaterial({ map: bricks, normalMap: bumps, roughness: 0.8 });
+const lamp = new StandardMaterial({ lit: false, color: [3, 2.2, 1] });      // brighter than white: it will bloom</code></pre></div>
+            <p>After changing something that switches a shader feature on or off (adding a map, toggling <code>lit</code>), call <code>material.invalidateProgram()</code>. Changing colours and numbers needs nothing.</p>
+
+            <h2 id="light">Light and shadow</h2>
+            <p>The scene has one sun, a two-tone ambient (sky from above, ground from below), up to 16 point lights and optional fog. All of it is plain data on the <code>Scene</code>.</p>
+            <div class="code"><pre><code data-lang="js">scene.sunDirection.set([0.5, -0.4, 0.76]);                     // pointing toward the sun
+scene.sunColor.set([1, 0.92, 0.8]);
+scene.pointLights.push({ position: [2, 0, 3], color: [2, 1, 0.5], radius: 8 });
+scene.fogColor.set([0.6, 0.7, 0.9]); scene.fogDensity = 0.01;
+
+scene.shadow = new ShadowMap({ center: [0, 0, 0], extent: [12, 12] });      // one box: a room, a board, a street
+scene.shadow = new ShadowMap({ cascades: 3, distance: 150 });               // follows the camera: an open world
+
+renderer.postfx = new PostFX(renderer, { ao: { enabled: true }, bloom: { intensity: 0.8 } });</code></pre></div>
+            <p>With one fixed box, keep it as small as the play area: the same texture over less ground is sharper. With cascades the view is cut into slices by distance and each gets its own box, so shadows are sharp at your feet and still reach the horizon. See the <a href="../examples/open-world.html">open world example</a> and switch between the two.</p>
+            <p><code>PostFX</code> adds ambient occlusion, bloom, tone mapping (<code>"aces"</code> or <code>"reinhard"</code>), saturation, contrast, vignette and grain. Every setting can be changed while running through <code>renderer.postfx.settings</code>.</p>
+
+            <h2 id="models">Models and animation</h2>
+            <div class="code"><pre><code data-lang="js">const asset = await loadGLTF("assets/models/robot.glb");        // { pbr: true } to use the file's metallic and roughness
+const robot = game.add(asset.instantiate());                    // call again for another copy; geometry is shared
+robot.animator.play("walk");
+game.onRender((dt) => robot.animator.update(dt));
+// later
+robot.animator.play("wave", { fade: 0.3, loop: false });</code></pre></div>
+            <p>The loader reads meshes, materials with their textures, one skin and its animations, morph targets and sparse accessors. Skeletons of up to 32 joints go to the GPU as uniforms; bigger ones (up to 256) travel in a float texture, which needs WebGL2 or the <code>OES_texture_float</code> extension. Draco and meshopt compression are not supported.</p>
+            <p>For a crowd, give each character its own <code>Animator</code> over the shared skeleton and clips, as the <a href="../examples/characters.html">characters example</a> does.</p>
+
+            <h2 id="input">Input</h2>
+            <p>The engine binds no keys of its own. A game names its actions and axes and reads those; keyboard, mouse, gamepad and on-screen controls all feed the same names.</p>
+            <div class="code"><pre><code data-lang="js">input.bind("jump", ["Space", "GamepadA", "TouchA"]);
+input.bindAxis("moveX", { negative: ["KeyA", "ArrowLeft"], positive: ["KeyD", "ArrowRight"], gamepad: "LeftX" });
+
+const touch = new TouchControls(input);          // appears only on touch screens
+touch.joystick({ x: "moveX", y: "moveY" });
+touch.button({ code: "TouchA", label: "Jump" });
+
+game.onUpdate((dt) => {
+    if (input.wasPressed("jump")) player.jump();
+    player.position[0] += input.axis("moveX") * speed * dt;
+});</code></pre></div>
+            <p>A tap that starts and ends between two steps is still reported by <code>wasPressed</code> in exactly one step, so quick presses are never lost. <code>input.pointer</code> has the position, drag deltas, wheel and pinch.</p>
+
+            <h2 id="collision">Collision and picking</h2>
+            <div class="code"><pre><code data-lang="js">// what is under the pointer?
+const ray = camera.screenRay(input.pointer.x, input.pointer.y, canvas.clientWidth, canvas.clientHeight);
+const hit = scene.raycast(ray)[0];               // nearest first: hit.entity, hit.distance, hit.point
+
+// keep a player out of the walls, sliding along them
+slideCircle(player.position, 0.4, walls);        // walls: [{ min: [x, y, z], max: [x, y, z] }, ...]</code></pre></div>
+            <p><code>engine/Collision.js</code> also has rays against spheres, boxes, planes and triangles, and overlap tests between spheres and boxes. There is no rigid-body physics; games so far have needed less than that.</p>
+
+            <h2 id="performance">Performance</h2>
+            <ul>
+                <li><strong>Culling is automatic.</strong> A mesh whose bounding sphere is outside the camera's view is not drawn. Instanced, skinned and shader-displaced meshes have no reliable bounds, so give their entity a <code>cullRadius</code> if you want them skipped too.</li>
+                <li><strong>Merge what never moves.</strong> <code>Geometry.merge(parts)</code> turns a street of buildings into one draw call. Merge per chunk, not per world, so chunks can be culled.</li>
+                <li><strong>Instance what repeats.</strong> <code>InstancedMesh</code> draws thousands of copies in one call; only changed instances are re-uploaded.</li>
+                <li><strong>Levels of detail.</strong> <code>entity.lod = [{ distance: 0, mesh: fine }, { distance: 80, mesh: coarse }, { distance: 300, mesh: null }]</code>.</li>
+                <li><strong>Quality presets.</strong> <code>renderer.setQuality("low" | "medium" | "high" | "ultra")</code> changes the resolution the scene is drawn at.</li>
+                <li><strong>Measure.</strong> <code>new DebugOverlay(game)</code> and press the key under Esc: frame time, draw calls, what was culled, triangles.</li>
+            </ul>
+
+            <h2 id="shaders">Your own shaders</h2>
+            <p>A <code>ShaderMaterial</code> is a vertex and a fragment shader in GLSL ES 1.00. Include the projection chunk and call <code>projectLab(worldPosition)</code> to reach the screen. Include the lighting chunk and call <code>labLight(world, normal)</code> to be lit, shadowed and fogged like everything else. The Renderer fills in every uniform those chunks declare.</p>
+            <div class="code"><pre><code data-lang="js">import { ShaderMaterial, projectionChunk, lightingChunk } from "./engine/index.js";
+
+const lava = new ShaderMaterial({
+    name: "lava",
+    uniforms: { u_heat: 1.5 },
+    vertex: projectionChunk + `
+        attribute vec3 a_position; attribute vec3 a_normal;
+        uniform mat4 u_model; uniform float u_time;
+        varying vec3 v_world; varying vec3 v_normal;
+        void main() {
+            vec4 world = u_model * vec4(a_position, 1.0);
+            world.z += sin(world.x * 2.0 + u_time) * 0.1;
+            v_world = world.xyz; v_normal = (u_model * vec4(a_normal, 0.0)).xyz;
+            gl_Position = projectLab(world.xyz);
+        }`,
+    fragment: lightingChunk + `
+        uniform float u_heat;
+        varying vec3 v_world; varying vec3 v_normal;
+        void main() {
+            vec3 lit = vec3(0.3, 0.05, 0.02) * labLight(v_world, normalize(v_normal));
+            gl_FragColor = vec4(labFog(lit, v_world) + vec3(1.0, 0.3, 0.05) * u_heat, 1.0);
+        }`,
+});</code></pre></div>
+            <p>The <a href="../examples/water.html">custom shader example</a> is a complete one.</p>
+
+            <h2 id="support">Browser support</h2>
+            <p>The engine targets WebGL2 and falls back to WebGL1 with extensions. On WebGL1 without depth textures, shadows and ambient occlusion switch themselves off and everything else still draws. The <a href="../tests/">test page</a> runs the suite in your own browser, on both kinds of context.</p>
+        </article>
+    </div>
+
+    <footer>
+        <div class="wrap">
+            <p>Projection Lab, built on projection_library by Rohit Sawant.</p>
+            <nav aria-label="Footer">
+                <a href="../">Home</a>
+                <a href="api.html">API reference</a>
+                <a href="https://github.com/rohitpatil9121/projection_library">Source</a>
+            </nav>
+        </div>
+    </footer>
+    <script type="module" src="../site/site.js"></script>
+</body>
+</html>

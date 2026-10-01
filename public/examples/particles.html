@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Particles and bloom · Projection Lab</title>
+    <meta name="description" content="Pooled particles, light trails, glow shells and HDR bloom over a procedural space sky.">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="example.css">
+</head>
+<body>
+    <canvas id="view" aria-label="Three comets circling a small glowing star, leaving trails of light and sparks"></canvas>
+    <div class="panel">
+        <a class="back" href="./">Examples</a>
+        <h1>Particles and bloom</h1>
+        <p>Click or tap for a burst. Colours brighter than white bleed into their surroundings; everything else stays crisp.</p>
+        <label><input type="checkbox" id="bloom" checked> Bloom</label>
+        <label>Exposure <input type="range" id="exposure" min="0.4" max="2" step="0.05" value="1"></label>
+        <div class="stats" id="stats"></div>
+    </div>
+    <script type="module">
+        import { Game, Entity, Mesh, BasicMaterial, GlowMaterial, ParticleSystem, Trail, Sky, PostFX, primitives } from "../engine/index.js";
+        import { orbit, ready } from "./shared.js";
+
+        const game = new Game({ canvas: document.getElementById("view"), antialias: false });
+        if (!game.failed) {
+            const { scene, camera, renderer, input } = game;
+            renderer.postfx = new PostFX(renderer, { bloom: { threshold: 0.85, intensity: 1.25, radius: 1.2 }, vignette: 0.35, grain: 0.03 });
+            scene.sky = new Sky({ uniforms: { u_nebulaA: [0.3, 0.12, 0.08], u_nebulaB: [0.05, 0.16, 0.3], u_nebula: 0.5 } });
+
+            // the star: an unlit core brighter than white, inside an additive shell that fades toward its outline
+            const star = game.add(new Entity({ mesh: new Mesh(primitives.sphere(1, 32, 20), new BasicMaterial({ lit: false, color: [2.6, 1.9, 0.9] })) }));
+            const halo = game.add(new Entity({ mesh: new Mesh(primitives.sphere(1, 32, 20), new GlowMaterial({ color: [1, 0.72, 0.3], intensity: 1.6, power: 2.2 })) }));
+            halo.setScale(1.9);
+
+            const sparks = game.add(new ParticleSystem({ capacity: 6000, gravity: [0, 0, 0], drag: 0.6 }));
+            const comets = [
+                { color: [0.5, 0.95, 1.6], radius: 4.2, speed: 1.1, tilt: 0.35, phase: 0 },
+                { color: [1.7, 0.55, 0.9], radius: 6.0, speed: 0.72, tilt: -0.5, phase: 2.1 },
+                { color: [1.5, 1.2, 0.5], radius: 8.1, speed: 0.5, tilt: 0.9, phase: 4.0 },
+            ].map((c) => {
+                const head = game.add(new Entity({ mesh: new Mesh(primitives.sphere(0.16, 12, 8), new BasicMaterial({ lit: false, color: c.color.map((v) => v * 1.8) })) }));
+                const trail = game.add(new Trail({ length: 300, color: c.color }));
+                return { ...c, head, trail, position: [0, 0, 0] };
+            });
+
+            const burst = (position, color, count = 220) => sparks.emit(count, {
+                position, speed: 7, life: [0.5, 1.6], size: [0.34, 0],
+                color: [color[0] * 1.6, color[1] * 1.6, color[2] * 1.6, 1], colorEnd: [color[0] * 0.4, color[1] * 0.2, color[2] * 0.6, 0],
+            });
+
+            camera.distance = 15; camera.pitch = 0.45; camera.yaw = -1.1;
+            orbit(game, { minDistance: 6, maxDistance: 70, spin: 0.08 });
+            input.bind("burst", ["Mouse0"]);
+
+            let pressAt = null, flare = 0.3;
+            game.onUpdate((dt) => {
+                const t = game.time;
+                star.setScale(1 + Math.sin(t * 2.3) * 0.03);
+                for (const c of comets) {
+                    const a = t * c.speed + c.phase, x = Math.cos(a) * c.radius, y = Math.sin(a) * c.radius;
+                    // tilt the orbit about the X axis
+                    c.position[0] = x; c.position[1] = y * Math.cos(c.tilt); c.position[2] = y * Math.sin(c.tilt);
+                    c.head.setPosition(c.position[0], c.position[1], c.position[2]);
+                    c.trail.push(c.position[0], c.position[1], c.position[2]);
+                    sparks.emit(2, { position: c.position, spread: 0.05, speed: 0.5, life: [0.3, 0.9], size: [0.14, 0], color: [...c.color, 0.9] });
+                }
+                // a click that didn't turn into a drag sets off a burst where the pointer's ray passes the star's plane
+                const p = input.pointer;
+                if (input.wasPressed("burst")) pressAt = [p.x, p.y];
+                if (input.wasReleased("burst") && pressAt && Math.hypot(p.x - pressAt[0], p.y - pressAt[1]) < 6) {
+                    const ray = camera.screenRay(p.x, p.y, renderer.canvas.clientWidth, renderer.canvas.clientHeight);
+                    const d = -(ray.origin[0] * camera.forward[0] + ray.origin[1] * camera.forward[1] + ray.origin[2] * camera.forward[2])
+                        / (ray.direction[0] * camera.forward[0] + ray.direction[1] * camera.forward[1] + ray.direction[2] * camera.forward[2]);
+                    burst(ray.origin.map((o, i) => o + ray.direction[i] * d), comets[Math.floor(Math.random() * 3)].color);
+                }
+                // every so often the star throws one off by itself
+                if ((flare -= dt) < 0) { flare = 1.7; burst([0, 0, 0], [1.4, 0.9, 0.4], 320); }
+            });
+
+            const $ = (id) => document.getElementById(id), stats = $("stats");
+            $("bloom").addEventListener("change", (e) => { renderer.postfx.settings.bloom.enabled = e.target.checked; });
+            $("exposure").addEventListener("input", (e) => { renderer.postfx.settings.exposure = +e.target.value; });
+            let since = 1;
+            game.onRender((dt) => {
+                if ((since += dt) < 0.25) return;
+                since = 0;
+                stats.textContent = `${sparks.alive} particles in 1 draw call\n${renderer.postfx.hdr ? "HDR" : "LDR"} target, ${renderer.stats.postPasses} post passes  ${Math.round(game.loop.fps)} fps`;
+            });
+            game.start();
+            ready(game, { sparks });
+        }
+    </script>
+</body>
+</html>

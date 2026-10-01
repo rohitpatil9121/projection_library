@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Prime Walk 3D · Projection Lab</title>
+    <meta name="description" content="A walk through 3D space that turns at every prime number: up to 250,000 cubes in one draw call.">
+    <meta property="og:title" content="Prime Walk 3D">
+    <meta property="og:description" content="A walk through 3D space that turns at every prime number.">
+    <meta property="og:image" content="https://rohitpatil9121.github.io/projection_library/assets/shots/prime-walk.jpg">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="examples/example.css">
+    <style>
+        #info { color: var(--accent); font: 13px "JetBrains Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+        .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+        #help { position: fixed; left: 12px; bottom: 12px; top: auto; width: auto; max-width: calc(100% - 24px); color: var(--dim); font-size: 12.5px; }
+        #help b { color: var(--ink); font-weight: 600; }
+        @media (max-width: 640px) { #help { display: none; } }
+    </style>
+</head>
+<body>
+    <canvas id="view" aria-label="A path of coloured cubes winding through space; gold cubes mark the prime numbers where the path turns"></canvas>
+
+    <div class="panel">
+        <a class="back" href="./">Projection Lab</a>
+        <h1>Prime Walk 3D</h1>
+        <p>Step once per integer and turn at every prime.</p>
+        <div id="info" role="status"></div>
+        <div>
+            <span class="legend" style="background:#ffd14d"></span>prime (turn)
+            &nbsp;<span class="legend" style="background:linear-gradient(90deg,#3fa7ff,#b84dff,#ff5a7a)"></span>path
+        </div>
+        <div class="row">
+            <button id="growBtn" aria-pressed="false">Grow</button>
+            <button id="frameBtn">Frame</button>
+            <button id="resetBtn">Reset</button>
+        </div>
+        <p style="margin:10px 0 0"><a class="back" href="prime-walk-classic.html">The original version, on the first renderer</a></p>
+    </div>
+
+    <div id="help" class="panel">
+        <b>Drag</b> orbit · <b>Right/Shift-drag</b> pan · <b>Wheel/pinch</b> zoom<br>
+        <b>Space</b> +1 step · <b>Shift+Space</b> +50 · <b>G</b> grow · <b>F</b> frame · <b>R</b> reset<br>
+        <b>A D W S</b> rotate · <b>J L O M I K</b> move · <b>V C</b> distance · <b>= −</b> magnify
+    </div>
+
+    <script type="module">
+        // Prime Walk 3D on the engine. A walker takes one step (2 units) per integer; every time the integer is
+        // prime it turns to the next direction. Each step leaves a cube. All cubes are instances of one box,
+        // so the whole walk is a single draw call however long it gets.
+        import { Game, Entity, InstancedMesh, StandardMaterial, PostFX, primitives } from "./engine/index.js";
+
+        const MAX = 250000, STEP = 2;
+        const canvas = document.getElementById("view");
+        const game = new Game({ canvas, antialias: false });
+        if (!game.failed) {
+            const { scene, camera, renderer } = game;
+            renderer.postfx = new PostFX(renderer, { ao: { enabled: true, radius: 1.6, intensity: 0.8 }, bloom: { threshold: 1.0, intensity: 0.7 }, vignette: 0.3 });
+            scene.clearColor.set([0.02, 0.02, 0.04, 1]);
+            scene.sunDirection.set([0.45, -0.35, 0.82]);
+            scene.sunColor.set([0.85, 0.83, 0.8]);
+            scene.skyColor.set([0.4, 0.42, 0.55]);
+            scene.groundColor.set([0.16, 0.15, 0.22]);
+            camera.far = 6000;
+            camera.yaw = Math.PI * 0.75; camera.pitch = 0.55; camera.distance = 80;
+
+            const cubes = new InstancedMesh(primitives.box(2, 2, 2), new StandardMaterial({ color: [1, 1, 1] }), MAX);
+            cubes.count = 0;
+            game.add(new Entity({ name: "walk", mesh: cubes }));
+
+            function hsl(h, s, l) {
+                const a = s * Math.min(l, 1 - l);
+                const f = (n) => { const k = (n + h * 12) % 12; return l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)); };
+                return [f(0), f(8), f(4)];
+            }
+            function isPrime(n) {
+                if (n < 2) return false;
+                if (n % 2 === 0) return n === 2;
+                for (let i = 3; i * i <= n; i += 2) if (n % i === 0) return false;
+                return true;
+            }
+            // y+, z+, x+, y-, z-, x-  (the turn order of the original walk)
+            const DIRS = [[0, 1, 0], [0, 0, 1], [1, 0, 0], [0, -1, 0], [0, 0, -1], [-1, 0, 0]];
+
+            const walk = {};
+            function resetWalk() {
+                walk.n = 1; walk.dir = 0; walk.pos = [0, 0, 0]; walk.primes = 0; walk.min = [0, 0, 0]; walk.max = [0, 0, 0];
+                cubes.count = 0;
+            }
+            function step() {
+                if (cubes.count >= MAX) return false;
+                const n = walk.n++, prime = isPrime(n);
+                if (prime) { walk.dir = (walk.dir + 1) % DIRS.length; walk.primes++; }
+                const d = DIRS[walk.dir];
+                for (let k = 0; k < 3; k++) {
+                    walk.pos[k] += d[k] * STEP;
+                    walk.min[k] = Math.min(walk.min[k], walk.pos[k]);
+                    walk.max[k] = Math.max(walk.max[k], walk.pos[k]);
+                }
+                const i = cubes.count++;
+                cubes.setTransform(i, walk.pos[0], walk.pos[1], walk.pos[2], prime ? 1 : 0.92);
+                // primes: gold, and self-lit (alpha 2) so bloom picks them out; the rest: a slow rainbow along the walk
+                if (prime) cubes.setColor(i, 1.15, 0.9, 0.28, 2);
+                else { const c = hsl((n * 0.0015 + 0.55) % 1, 0.75, 0.55); cubes.setColor(i, c[0], c[1], c[2], 1); }
+                return true;
+            }
+            const addSteps = (count) => { for (let i = 0; i < count && step(); i++); };
+
+            // ------------------------------------------------------------ camera: eased toward a goal, auto-framed
+            const view = { target: [0, 0, 0], distance: 60, vYaw: 0, vPitch: 0, autoFrame: true };
+            function frameGoal() {
+                const c = [0, 1, 2].map((k) => (walk.min[k] + walk.max[k]) / 2);
+                const r = Math.hypot(...[0, 1, 2].map((k) => walk.max[k] - walk.min[k])) / 2 + 4;
+                const aspect = canvas.clientWidth > 0 && canvas.clientHeight > 0 ? canvas.clientWidth / canvas.clientHeight : 1;
+                return { c, distance: Math.max(12, (r * camera.focal) / Math.min(1, aspect) * 1.15) };
+            }
+            const zoom = (factor) => { view.autoFrame = false; view.distance = Math.max(4, Math.min(4500, view.distance * factor)); };
+
+            let drag = null;
+            const pointers = new Map();
+            canvas.addEventListener("pointerdown", (e) => {
+                pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+                drag = { pan: e.button === 2 || e.shiftKey, t: performance.now() };
+                view.vYaw = view.vPitch = 0;
+            });
+            canvas.addEventListener("pointermove", (e) => {
+                const p = pointers.get(e.pointerId);
+                if (!p || !drag) return;
+                const dx = e.clientX - p.x, dy = e.clientY - p.y;
+                if (pointers.size === 2) {      // pinch
+                    const [a, b] = [...pointers.values()], before = Math.hypot(a.x - b.x, a.y - b.y);
+                    p.x = e.clientX; p.y = e.clientY;
+                    const after = Math.hypot(a.x - b.x, a.y - b.y);
+                    if (before > 0 && after > 0) zoom(before / after);
+                    return;
+                }
+                p.x = e.clientX; p.y = e.clientY;
+                if (drag.pan) {
+                    // the content follows the cursor: move the target against the drag, in the view plane
+                    view.autoFrame = false;
+                    const k = (2 * camera.distance) / camera.focal / canvas.clientHeight;
+                    for (let i = 0; i < 3; i++) view.target[i] += (-dx * camera.right[i] + dy * camera.up[i]) * k;
+                } else {
+                    const now = performance.now(), dt = Math.max(1, now - drag.t) / 1000;
+                    drag.t = now;
+                    camera.yaw -= dx / 250; camera.pitch += dy / 250;
+                    view.vYaw = -dx / 250 / dt; view.vPitch = dy / 250 / dt;
+                }
+            });
+            const endPointer = (e) => {
+                pointers.delete(e.pointerId);
+                if (pointers.size === 0) {
+                    // keep the fling only if the pointer was still moving when released
+                    if (drag && performance.now() - drag.t > 80) view.vYaw = view.vPitch = 0;
+                    drag = null;
+                }
+            };
+            canvas.addEventListener("pointerup", endPointer);
+            canvas.addEventListener("pointercancel", endPointer);
+            canvas.addEventListener("wheel", (e) => zoom(Math.exp(e.deltaY * 0.0012)), { passive: true });
+
+            // ------------------------------------------------------------ keyboard + buttons
+            let autoGrow = false;
+            const growBtn = document.getElementById("growBtn");
+            const setAutoGrow = (on) => { autoGrow = on; growBtn.textContent = on ? "Pause" : "Grow"; growBtn.setAttribute("aria-pressed", String(on)); };
+            const reset = () => { resetWalk(); addSteps(400); view.autoFrame = true; };
+            document.addEventListener("keydown", (e) => {
+                if (e.target instanceof HTMLButtonElement && (e.code === "Space" || e.code === "Enter")) return;      // the button handles its own keys
+                const nudge = 0.06;
+                const shift = (v, amount) => { view.autoFrame = false; for (let i = 0; i < 3; i++) view.target[i] += v[i] * amount; };
+                switch (e.code) {
+                    case "Space": case "Enter": e.preventDefault(); addSteps(e.shiftKey ? 50 : 1); break;
+                    case "KeyG": setAutoGrow(!autoGrow); break;
+                    case "KeyF": view.autoFrame = true; break;
+                    case "KeyR": reset(); break;
+                    case "KeyA": camera.yaw += nudge; break;
+                    case "KeyD": camera.yaw -= nudge; break;
+                    case "KeyS": camera.pitch += nudge; break;
+                    case "KeyW": camera.pitch -= nudge; break;
+                    case "KeyJ": shift(camera.left, STEP); break;
+                    case "KeyL": shift(camera.left, -STEP); break;
+                    case "KeyO": shift(camera.up, STEP); break;
+                    case "KeyM": shift(camera.up, -STEP); break;
+                    case "KeyI": shift(camera.forward, STEP); break;
+                    case "KeyK": shift(camera.forward, -STEP); break;
+                    case "KeyV": zoom(1.1); break;
+                    case "KeyC": zoom(1 / 1.1); break;
+                    case "Equal": case "NumpadAdd": camera.focal = camera.focal + 0.125; break;
+                    case "Minus": case "NumpadSubtract": camera.focal = Math.max(0.25, camera.focal - 0.125); break;
+                }
+            });
+            growBtn.addEventListener("click", () => setAutoGrow(!autoGrow));
+            document.getElementById("frameBtn").addEventListener("click", () => { view.autoFrame = true; });
+            document.getElementById("resetBtn").addEventListener("click", reset);
+
+            const info = document.getElementById("info");
+            let shown = -1, frames = 0;
+            game.onRender((dt) => {
+                if (autoGrow) { addSteps(Math.max(1, Math.round(4 + walk.n / 400))); if (cubes.count >= MAX) setAutoGrow(false); }
+                if (!drag) {    // orbit inertia after a fling
+                    camera.yaw += view.vYaw * dt; camera.pitch += view.vPitch * dt;
+                    const decay = Math.exp(-dt * 3);
+                    view.vYaw *= decay; view.vPitch *= decay;
+                }
+                if (view.autoFrame) { const f = frameGoal(); view.target = f.c; view.distance = f.distance; }
+                const k = 1 - Math.exp(-dt * 5);
+                for (let i = 0; i < 3; i++) camera.target[i] += (view.target[i] - camera.target[i]) * k;
+                camera.distance += (view.distance - camera.distance) * k;
+                // occlusion reaches a fixed distance in world units; widen it as the walk (and the view) grows
+                renderer.postfx.settings.ao.radius = Math.max(1.6, camera.distance * 0.012);
+                if (shown !== walk.n) { shown = walk.n; info.textContent = `n = ${(walk.n - 1).toLocaleString()}  ·  prime turns = ${walk.primes.toLocaleString()}`; }
+                if (++frames === 4) window.__ready = true;
+            });
+
+            reset();
+            camera.distance = 80;
+            game.start();
+            // handy for experimenting from the console
+            window.lab = { game, cubes, walk, addSteps };
+            if (location.search.includes("grow")) addSteps(1400);
+        }
+    </script>
+</body>
+</html>

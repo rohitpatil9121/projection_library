@@ -4,17 +4,22 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Lit scene · Projection Lab</title>
+    <meta name="description" content="The light system with switches: sun shadows, point lights and ambient occlusion.">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
     <style>
         html, body { margin: 0; height: 100%; background: #0b0d16; color: #e6e8f2; font: 14px/1.5 system-ui, sans-serif; }
         canvas { display: block; width: 100%; height: 100%; touch-action: none; }
         #panel { position: fixed; left: 12px; top: 12px; padding: 10px 14px; border-radius: 12px; background: rgba(10, 12, 24, 0.75); border: 1px solid rgba(160, 185, 255, 0.2); }
         #panel label { display: block; cursor: pointer; }
+        #panel a { color: #9aa6cf; font-size: 12px; text-decoration: none; display: block; margin-bottom: 4px; }
+        #panel a:hover, #panel a:focus-visible { color: #f5c542; }
         #stats { font: 12px ui-monospace, monospace; color: #9aa6cf; margin-top: 6px; }
     </style>
 </head>
 <body>
     <canvas id="view" aria-label="Boxes and spheres on a floor, lit by a sun that casts shadows and two coloured lamps; a striped column bends from side to side"></canvas>
     <div id="panel">
+        <a href="./">Examples</a>
         <label><input type="checkbox" id="shadows" checked> Sun shadows</label>
         <label><input type="checkbox" id="ao" checked> Ambient occlusion</label>
         <label><input type="checkbox" id="lamps" checked> Point lights</label>
@@ -98,6 +103,8 @@
         });
         game.start();
         window.lab = { game, scene, renderer, animator };
+        let frames = 0;
+        game.onRender(() => { if (++frames === 4) window.__ready = true; });
     </script>
 </body>
 </html>

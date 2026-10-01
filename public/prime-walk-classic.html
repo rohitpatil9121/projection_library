@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prime Walk 3D (original renderer) · Projection Lab</title>
+    <meta name="description" content="Prime Walk 3D on Space.js, the original projection_library renderer.">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <style>
+        html, body {
+            margin: 0;
+            height: 100%;
+            background: #05050a;
+            overflow: hidden;
+            font: 13px/1.5 system-ui, "Segoe UI", sans-serif;
+            color: #cfd6e6;
+        }
+
+        #myBoard {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+            touch-action: none;
+            cursor: grab;
+        }
+
+        #myBoard:active { cursor: grabbing; }
+
+        .panel {
+            position: fixed;
+            padding: 12px 14px;
+            border-radius: 10px;
+            background: rgba(15, 18, 28, 0.82);
+            border: 1px solid #2a2f3b;
+            backdrop-filter: blur(6px);
+        }
+
+        #top { left: 12px; top: 12px; max-width: calc(100% - 24px); }
+        h1 { margin: 0 0 2px; font-size: 16px; color: #fff; }
+        #info { color: #ffd166; font-variant-numeric: tabular-nums; }
+        .buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+        button {
+            font: inherit; font-weight: 600; cursor: pointer; color: #e8ecf4;
+            background: #1b2030; border: 1px solid #343b50; border-radius: 7px; padding: 6px 12px;
+        }
+        button:hover { border-color: #5aa9ff; }
+        #growBtn { background: #5aa9ff; color: #06101c; border-color: #5aa9ff; }
+
+        #help { left: 12px; bottom: 12px; color: #8a91a3; }
+        #help b { color: #e8ecf4; font-weight: 600; }
+        .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+
+        @media (max-width: 600px) { #help { display: none; } }
+    </style>
+</head>
+
+<body>
+    <canvas id="myBoard"></canvas>
+
+    <div id="top" class="panel">
+        <h1>Prime Walk 3D</h1>
+        <div>Step once per integer and turn at every prime. This is the original version, drawn by Space.js.</div>
+        <div id="info"></div>
+        <div>
+            <span class="legend" style="background:#ffd14d"></span>prime (turn)
+            &nbsp;<span class="legend" style="background:linear-gradient(90deg,#3fa7ff,#b84dff,#ff5a7a)"></span>path
+        </div>
+        <div class="buttons">
+            <button id="growBtn">▶ Grow</button>
+            <button id="frameBtn">Frame</button>
+            <button id="resetBtn">Reset</button>
+            <a href="prime-walk.html"><button>Engine version</button></a>
+            <a href="preview.html"><button>OBJ viewer</button></a>
+            <a href="./"><button>Projection Lab</button></a>
+        </div>
+    </div>
+
+    <div id="help" class="panel">
+        <b>Drag</b> orbit · <b>Right/Shift-drag</b> pan · <b>Wheel/pinch</b> zoom<br>
+        <b>Space</b> +1 step · <b>Shift+Space</b> +50 · <b>G</b> grow · <b>F</b> frame · <b>R</b> reset<br>
+        <b>A D W S</b> rotate · <b>J L O M I K</b> move · <b>V C</b> distance · <b>= −</b> magnify
+    </div>
+
+    <script type="module" src="Main.js"></script>
+</body>
+
+</html>

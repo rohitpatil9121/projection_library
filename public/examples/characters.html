@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Characters · Projection Lab</title>
+    <meta name="description" content="A crowd of skinned, animated characters loaded from glTF: one skeleton, one material, a colour palette each.">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="example.css">
+</head>
+<body>
+    <canvas id="view" aria-label="Forty small figures in different clothes walking in two rings around a dog"></canvas>
+    <div class="panel">
+        <a class="back" href="./">Examples</a>
+        <h1>Characters</h1>
+        <p>Forty people share one skeleton, one set of clips and one material. Each has its own Animator and an eight-colour palette. Models are generated in code for the Night Market game.</p>
+        <div class="row" id="clips" role="group" aria-label="Animation"></div>
+        <div class="stats" id="stats"></div>
+    </div>
+    <script type="module">
+        import { Game, Entity, Mesh, SkinnedMesh, Geometry, StandardMaterial, Animator, ShadowMap, PostFX, loadGLTF, primitives, quat } from "../engine/index.js";
+        import { orbit, ready, random } from "./shared.js";
+
+        const game = new Game({ canvas: document.getElementById("view"), antialias: false });
+        if (!game.failed) {
+            const { scene, camera, renderer } = game;
+            renderer.postfx = new PostFX(renderer, { ao: { enabled: true, radius: 0.45 }, bloom: { threshold: 1.1, intensity: 0.4 }, vignette: 0.3 });
+            scene.clearColor.set([0.72, 0.8, 0.9, 1]);
+            scene.sunDirection.set([0.5, -0.42, 0.76]);
+            scene.sunColor.set([1.0, 0.92, 0.8]);
+            scene.skyColor.set([0.38, 0.44, 0.58]);
+            scene.groundColor.set([0.24, 0.2, 0.17]);
+            scene.fogColor.set([0.72, 0.8, 0.9]); scene.fogDensity = 0.01;
+            scene.shadow = new ShadowMap({ center: [0, 0, 0], extent: [11, 11], depth: 50, size: 2048, strength: 0.7 });
+            game.add(new Entity({ mesh: new Mesh(primitives.plane(80, 80), new StandardMaterial({ color: [0.78, 0.72, 0.62] })) }));
+
+            const [person, dog] = await Promise.all([loadGLTF("../assets/models/person.glb"), loadGLTF("../assets/models/dog.glb")]);
+            const rand = random(11), pick = (list) => list[Math.floor(rand() * list.length)];
+            const SKIN = [[0.99, 0.84, 0.7], [0.93, 0.74, 0.58], [0.82, 0.62, 0.46], [0.62, 0.44, 0.31], [0.44, 0.3, 0.22]];
+            const SHIRT = [[0.9, 0.3, 0.3], [0.26, 0.54, 0.92], [0.98, 0.8, 0.28], [0.32, 0.76, 0.54], [0.66, 0.46, 0.9], [0.99, 0.56, 0.22], [0.93, 0.94, 0.96], [0.2, 0.21, 0.27], [0.56, 0.87, 0.9], [0.98, 0.6, 0.76]];
+            const PANTS = [[0.17, 0.18, 0.27], [0.24, 0.32, 0.52], [0.42, 0.35, 0.29], [0.56, 0.58, 0.62]];
+            const HAIR = [[0.1, 0.09, 0.09], [0.34, 0.22, 0.12], [0.78, 0.56, 0.24], [0.6, 0.6, 0.63], [0.66, 0.2, 0.15]];
+
+            // one material for everybody: a vertex stores a palette index, each mesh brings its own palette
+            const material = new StandardMaterial({ palette: new Float32Array(StandardMaterial.PALETTE_SIZE * 3).fill(1) });
+            // body + one of four hair styles, merged so a person is a single draw call
+            const looks = [0, 1, 2, 3].map((h) => Geometry.merge([{ geometry: person.geometry("body") }, { geometry: person.geometry("hair" + h) }], { skin: true }));
+
+            const people = [];
+            for (let i = 0; i < 40; i++) {
+                const animator = new Animator(person.skeleton, person.clips);
+                const mesh = new SkinnedMesh(pick(looks), material, animator);
+                const palette = new Float32Array(StandardMaterial.PALETTE_SIZE * 3);
+                [pick(SKIN), pick(SHIRT), pick(PANTS), pick(HAIR), [0.09, 0.08, 0.1], [0.2, 0.17, 0.18], [0.97, 0.96, 0.93], [0.97, 0.96, 0.93]].forEach((c, k) => palette.set(c, k * 3));
+                mesh.uniforms = { u_palette: palette };
+                // the entity places and turns the person; the body under it is stood upright (glTF is Y-up, the engine Z-up)
+                const root = game.add(new Entity({ name: "person" }));
+                root.setScale(0.9 + rand() * 0.25);
+                // skinned meshes have no bounds of their own; a radius lets the Renderer skip people who are off screen
+                const body = root.add(new Entity({ mesh, cullRadius: 1.6 }));
+                quat.copy(body.rotation, person.upright);
+                const ring = i < 16 ? 0 : 1;
+                people.push({ root, animator, radius: ring ? 7.2 : 4.2, angle: (i / (ring ? 24 : 16)) * Math.PI * 2, direction: ring ? -1 : 1, speed: 0.9 + rand() * 0.25 });
+                animator.play("walk", { offset: rand() });
+            }
+
+            const pet = game.add(dog.instantiate());
+            pet.animator.play("sit");
+            for (const child of pet.children) if (child.mesh) {
+                const palette = new Float32Array(StandardMaterial.PALETTE_SIZE * 3);
+                [[0.72, 0.5, 0.3], [0.96, 0.92, 0.84], [0.12, 0.1, 0.1], [0.85, 0.3, 0.3], [0.2, 0.17, 0.18], [0.5, 0.34, 0.2], [1, 1, 1], [1, 1, 1]].forEach((c, k) => palette.set(c, k * 3));
+                child.mesh.material = material;
+                child.mesh.uniforms = { u_palette: palette };
+            }
+
+            // which clips make sense for a ring of walkers: moving ones walk, the rest stand and face the middle
+            const CLIPS = ["walk", "idle", "wave", "cheer", "argue", "tired"].filter((n) => person.clip(n));
+            let current = "walk";
+            const row = document.getElementById("clips");
+            for (const name of CLIPS) {
+                const b = document.createElement("button");
+                b.type = "button"; b.textContent = name; b.setAttribute("aria-pressed", String(name === current));
+                b.addEventListener("click", () => {
+                    current = name;
+                    for (const p of people) p.animator.play(name, { fade: 0.35, offset: name === "walk" ? Math.random() : Math.random() * 0.3 });
+                    pet.animator.play(name === "walk" ? "walk" : name === "idle" ? "idle" : "sit", { fade: 0.35 });
+                    row.querySelectorAll("button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+                });
+                row.appendChild(b);
+            }
+
+            camera.distance = 15; camera.pitch = 0.42; camera.yaw = -1.9; camera.target.set([0, 0, 0.9]);
+            orbit(game, { minDistance: 4, maxDistance: 45, minPitch: 0.06, spin: 0.06 });
+
+            let petAngle = 0;
+            game.onUpdate((dt) => {
+                const walking = current === "walk";
+                for (const p of people) {
+                    if (walking) p.angle += (p.direction * p.speed * 1.25 * dt) / p.radius;
+                    p.root.setPosition(Math.cos(p.angle) * p.radius, Math.sin(p.angle) * p.radius, 0);
+                    // walkers face along the ring; everyone else turns to the middle
+                    p.root.setYaw(walking ? p.angle + (p.direction * Math.PI) / 2 : p.angle + Math.PI);
+                }
+                if (walking) petAngle += dt * 0.9;
+                pet.setPosition(Math.cos(petAngle) * 1.6, Math.sin(petAngle) * 1.6, 0);
+                pet.rotation.set(quat.multiply(quat.create(), quat.setAxisAngle(quat.create(), [0, 0, 1], petAngle + Math.PI / 2), dog.upright));
+            });
+            const stats = document.getElementById("stats");
+            let since = 1;
+            game.onRender((dt) => {
+                for (const p of people) p.animator.update(dt);
+                pet.animator.update(dt);
+                if ((since += dt) < 0.25) return;
+                since = 0;
+                const s = renderer.stats;
+                stats.textContent = `${s.drawCalls} draws + ${s.shadowCalls} shadow  ${s.programs} programs\n${person.skeleton.count} joints, ${person.clips.length} clips  ${Math.round(game.loop.fps)} fps`;
+            });
+            game.start();
+            ready(game, { people, person, dog });
+        }
+    </script>
+</body>
+</html>

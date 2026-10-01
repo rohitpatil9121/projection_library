@@ -1,85 +1,197 @@
 <!DOCTYPE html>
 <html lang="en">
-
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Prime Walk 3D · projection_library</title>
-    <style>
-        html, body {
-            margin: 0;
-            height: 100%;
-            background: #05050a;
-            overflow: hidden;
-            font: 13px/1.5 system-ui, "Segoe UI", sans-serif;
-            color: #cfd6e6;
-        }
-
-        #myBoard {
-            display: block;
-            width: 100vw;
-            height: 100vh;
-            touch-action: none;
-            cursor: grab;
-        }
-
-        #myBoard:active { cursor: grabbing; }
-
-        .panel {
-            position: fixed;
-            padding: 12px 14px;
-            border-radius: 10px;
-            background: rgba(15, 18, 28, 0.82);
-            border: 1px solid #2a2f3b;
-            backdrop-filter: blur(6px);
-        }
-
-        #top { left: 12px; top: 12px; max-width: calc(100% - 24px); }
-        h1 { margin: 0 0 2px; font-size: 16px; color: #fff; }
-        #info { color: #ffd166; font-variant-numeric: tabular-nums; }
-        .buttons { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
-        button {
-            font: inherit; font-weight: 600; cursor: pointer; color: #e8ecf4;
-            background: #1b2030; border: 1px solid #343b50; border-radius: 7px; padding: 6px 12px;
-        }
-        button:hover { border-color: #5aa9ff; }
-        #growBtn { background: #5aa9ff; color: #06101c; border-color: #5aa9ff; }
-
-        #help { left: 12px; bottom: 12px; color: #8a91a3; }
-        #help b { color: #e8ecf4; font-weight: 600; }
-        .legend { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
-
-        @media (max-width: 600px) { #help { display: none; } }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Projection Lab: a WebGL engine built from the projection up</title>
+    <meta name="description" content="A from-scratch WebGL game engine in plain ES modules: cascaded shadows, PBR materials, skinned glTF characters, instancing, particles and post effects. No three.js, no build step.">
+    <link rel="canonical" href="https://rohitpatil9121.github.io/projection_library/">
+    <meta property="og:type" content="website">
+    <meta property="og:title" content="Projection Lab: a WebGL engine built from the projection up">
+    <meta property="og:description" content="Cascaded shadows, PBR materials, skinned characters and 100k-instance scenes in plain ES modules. No three.js, no build step.">
+    <meta property="og:url" content="https://rohitpatil9121.github.io/projection_library/">
+    <meta property="og:image" content="https://rohitpatil9121.github.io/projection_library/assets/shots/og.jpg">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="theme-color" content="#0e0f15" media="(prefers-color-scheme: dark)">
+    <meta name="theme-color" content="#f3f4f7" media="(prefers-color-scheme: light)">
+    <link rel="icon" href="favicon.svg" type="image/svg+xml">
+    <link rel="preload" href="vendor/fonts/SpaceGrotesk-latin.woff2" as="font" type="font/woff2" crossorigin>
+    <link rel="stylesheet" href="site/site.css">
 </head>
-
 <body>
-    <canvas id="myBoard"></canvas>
-
-    <div id="top" class="panel">
-        <h1>Prime Walk 3D</h1>
-        <div>Step once per integer and turn at every prime.</div>
-        <div id="info"></div>
-        <div>
-            <span class="legend" style="background:#ffd14d"></span>prime (turn)
-            &nbsp;<span class="legend" style="background:linear-gradient(90deg,#3fa7ff,#b84dff,#ff5a7a)"></span>path
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav">
+        <div class="wrap">
+            <a class="brand" href="./"><img src="favicon.svg" alt="" width="26" height="26"><span>Projection Lab</span></a>
+            <nav aria-label="Main">
+                <a href="examples/">Examples</a>
+                <a href="docs/">Docs</a>
+                <a href="#games">Games</a>
+                <a href="https://github.com/rohitpatil9121/projection_library">GitHub</a>
+            </nav>
         </div>
-        <div class="buttons">
-            <button id="growBtn">▶ Grow</button>
-            <button id="frameBtn">Frame</button>
-            <button id="resetBtn">Reset</button>
-            <a href="https://rohitpatil9121.github.io/neon-rush/" target="_blank" rel="noopener"><button>🎮 Neon Rush ↗</button></a>
-            <a href="preview.html"><button>OBJ viewer →</button></a>
+    </header>
+
+    <main id="main">
+        <div class="wrap hero">
+            <div>
+                <h1>A WebGL engine built from the projection up.</h1>
+                <p class="lede">Lights, shadows, PBR materials, skinned characters and 100k-instance scenes in plain ES modules. No three.js, no build step.</p>
+                <div class="actions">
+                    <a class="btn btn-primary" href="examples/">See the examples</a>
+                    <a class="btn btn-ghost" href="docs/">Read the docs</a>
+                </div>
+            </div>
+            <figure class="stage" style="margin-block:0;margin-left:0">
+                <img src="assets/shots/hero.jpg" alt="A gold sphere inside a copper ring on a round floor, with coloured blocks around it and a small lamp circling" width="1120" height="864">
+                <canvas id="hero" aria-label="Live scene: a gold sphere inside a turning copper ring, coloured blocks around it, a lamp circling. Drag sideways to turn it."></canvas>
+                <figcaption>Live. Drag to turn.</figcaption>
+            </figure>
         </div>
-    </div>
 
-    <div id="help" class="panel">
-        <b>Drag</b> orbit · <b>Right/Shift-drag</b> pan · <b>Wheel/pinch</b> zoom<br>
-        <b>Space</b> +1 step · <b>Shift+Space</b> +50 · <b>G</b> grow · <b>F</b> frame · <b>R</b> reset<br>
-        <b>A D W S</b> rotate · <b>J L O M I K</b> move · <b>V C</b> distance · <b>= −</b> magnify
-    </div>
+        <section id="features">
+            <div class="wrap">
+                <p class="eyebrow">What is in it</p>
+                <h2>Everything a small 3D game needs, and you can read all of it.</h2>
+                <div class="bento">
+                    <a class="cell shot c-a reveal" href="examples/open-world.html">
+                        <img src="assets/shots/open-world.jpg" alt="A low-poly forest with long tree shadows" loading="lazy" width="960" height="600">
+                        <h3>Light that holds up at scale</h3>
+                        <p>Sun shadows in up to three cascades, 16 point lights, ambient occlusion and fog. Meshes outside the view are never drawn, and far ones swap to cheaper models.</p>
+                    </a>
+                    <a class="cell shot c-b reveal" style="--i:1" href="examples/materials.html">
+                        <img src="assets/shots/materials.jpg" alt="Rows of spheres from plastic to metal on a tiled floor" loading="lazy" width="960" height="600">
+                        <h3>Physically based materials</h3>
+                        <p>Metallic and roughness, normal maps, emissive maps.</p>
+                    </a>
+                    <a class="cell shot c-c reveal" style="--i:2" href="examples/characters.html">
+                        <img src="assets/shots/characters.jpg" alt="A crowd of small animated figures walking in rings" loading="lazy" width="960" height="600">
+                        <h3>Characters</h3>
+                        <p>glTF models, skeletons up to 256 joints, cross-faded clips.</p>
+                    </a>
+                    <a class="cell shot c-d reveal" href="experiments/instancing/">
+                        <img src="assets/shots/instancing.jpg" alt="A disc of one hundred thousand cubes" loading="lazy" width="960" height="600">
+                        <h3>100,000 instances, one draw call</h3>
+                        <p>Per-instance matrix and colour, uploaded only where they changed.</p>
+                    </a>
+                    <a class="cell shot c-e reveal" style="--i:1" href="examples/particles.html">
+                        <img src="assets/shots/particles.jpg" alt="Comets with light trails around a glowing star" loading="lazy" width="960" height="600">
+                        <h3>Particles and post effects</h3>
+                        <p>Pooled sprites, trails, HDR bloom, tone mapping, grading.</p>
+                    </a>
+                    <a class="cell c-f reveal" style="--i:2" href="#projection">
+                        <pre aria-hidden="true"><code data-lang="glsl">vec3 v = world - u_camPos;
+float x = dot(v, u_camRight);
+float y = dot(v, u_camUp);
+float z = dot(v, u_camForward);</code></pre>
+                        <div>
+                            <h3>The projection is three dot products</h3>
+                            <p>No view matrix. The camera's own axes do the work.</p>
+                        </div>
+                    </a>
+                </div>
+            </div>
+        </section>
 
-    <script type="module" src="Main.js"></script>
+        <section id="start">
+            <div class="wrap">
+                <h2>A lit, shadowed scene in a dozen lines.</h2>
+                <p class="sub">The engine is a folder of ES modules. Copy it next to your page and import what you use.</p>
+                <div class="start">
+                    <div class="code reveal">
+                        <div class="bar"><span>main.js</span><button type="button" data-copy>Copy</button></div>
+                        <pre><code data-lang="js">import { Game, Entity, Mesh, PBRMaterial, StandardMaterial, ShadowMap, primitives } from "./engine/index.js";
+
+const game = new Game({ canvas: document.querySelector("canvas") });
+game.scene.shadow = new ShadowMap({ extent: [8, 8] });
+
+const floor = new Mesh(primitives.plane(20, 20), new StandardMaterial({ color: [0.8, 0.8, 0.85] }));
+const gold = new Mesh(primitives.sphere(1, 48, 32), new PBRMaterial({ color: [1, 0.77, 0.34], metallic: 1, roughness: 0.25 }));
+
+game.add(new Entity({ mesh: floor }));
+const ball = game.add(new Entity({ mesh: gold }));
+ball.setPosition(0, 0, 1.5);
+
+game.onUpdate(() => ball.setYaw(game.time));     // fixed 60 Hz steps, drawn at any refresh rate
+game.start();</code></pre>
+                    </div>
+                    <ol class="steps">
+                        <li class="reveal"><div><h3>Copy three folders</h3><p><code>engine/</code>, <code>shaders/</code> and <code>vendor/</code> from <code>public/</code>. Or load the single bundled file.</p></div></li>
+                        <li class="reveal" style="--i:1"><div><h3>Import from one entry point</h3><p>Every class comes from <code>engine/index.js</code>. Nothing is global, nothing runs until you call it.</p></div></li>
+                        <li class="reveal" style="--i:2"><div><h3>Serve it over HTTP</h3><p>Any static server works. There is nothing to compile, so what you edit is what the browser runs.</p></div></li>
+                    </ol>
+                </div>
+            </div>
+        </section>
+
+        <section id="games" style="padding-inline:0">
+            <div class="wrap">
+                <p class="eyebrow">Built with it</p>
+                <h2>Four games, each in its own repository.</h2>
+            </div>
+            <div class="reel" tabindex="0" role="region" aria-label="Games built with Projection Lab">
+                <a class="game" href="https://rohitpatil9121.github.io/night-market/">
+                    <div class="frame"><img src="assets/shots/game-night-market.jpg" alt="Night Market title screen: food stalls on a lantern-lit street" loading="lazy" width="960" height="600"></div>
+                    <h3>Night Market</h3>
+                    <p>A street-food tycoon where the staff and the regulars are the game.</p>
+                </a>
+                <a class="game" href="https://rohitpatil9121.github.io/orbital/">
+                    <div class="frame"><img src="assets/shots/game-orbital.jpg" alt="Orbital title screen: planets over a curved grid" loading="lazy" width="960" height="600"></div>
+                    <h3>Orbital</h3>
+                    <p>A gravity puzzle. Place worlds, bend the path, reach the light.</p>
+                </a>
+                <a class="game" href="https://rohitpatil9121.github.io/rewind-heist/">
+                    <div class="frame"><img src="assets/shots/game-rewind-heist.jpg" alt="Rewind Heist level select over a glowing vault floor plan" loading="lazy" width="960" height="600"></div>
+                    <h3>Rewind Heist</h3>
+                    <p>A time-loop stealth heist. Every loop you play is replayed by a ghost of your past self.</p>
+                </a>
+                <a class="game" href="https://rohitpatil9121.github.io/neon-rush/">
+                    <div class="frame"><img src="assets/shots/game-neon-rush.jpg" alt="Neon Rush level select in pink and cyan neon" loading="lazy" width="960" height="600"></div>
+                    <h3>Neon Rush</h3>
+                    <p>A synthwave runner with five levels, power-ups and custom shaders.</p>
+                </a>
+            </div>
+        </section>
+
+        <section id="projection">
+            <div class="wrap maths">
+                <h2>It started as one idea about cameras.</h2>
+                <div class="prose reveal">
+                    <p>The camera sits on a sphere around the point it looks at. From that, the engine builds the camera's three axes by hand: forward, up (world-up with its forward part removed) and right. A vertex reaches the screen by measuring itself along each axis.</p>
+                </div>
+                <div class="formula reveal" role="img" aria-label="v equals p minus eye. clip x equals v dot right, times focal over aspect. clip y equals v dot up, times focal. clip w equals v dot forward.">v      = p - eye
+clip.x = dot(v, right)   * focal / aspect
+clip.y = dot(v, up)      * focal
+clip.w = dot(v, forward)</div>
+                <div class="prose reveal">
+                    <p>That camera and projection come from <a href="https://github.com/rohit-s-init/projection_library">projection_library by Rohit Sawant</a>, and they still run every frame. The renderer, lights, materials, animation and tools grew around them, each written to be read: every file opens with a plain-language account of what it does and why.</p>
+                </div>
+                <div class="links reveal">
+                    <a class="chip" href="prime-walk.html">Prime Walk 3D</a>
+                    <a class="chip" href="preview.html">OBJ viewer</a>
+                    <a class="chip" href="tests/">Run the 57 tests</a>
+                    <a class="chip" href="https://github.com/rohitpatil9121/projection_library/blob/main/ARCHITECTURE.md">Architecture notes</a>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="wrap">
+            <p>Projection Lab, built on projection_library by Rohit Sawant.</p>
+            <nav aria-label="Footer">
+                <a href="examples/">Examples</a>
+                <a href="docs/">Docs</a>
+                <a href="docs/api.html">API reference</a>
+                <a href="https://github.com/rohitpatil9121/projection_library">Source</a>
+                <a href="https://github.com/rohitpatil9121/projection_library/blob/main/THIRD_PARTY.md">Third-party notices</a>
+            </nav>
+        </div>
+    </footer>
+
+    <script type="module" src="site/site.js"></script>
+    <script type="module" src="site/hero.js"></script>
 </body>
-
 </html>

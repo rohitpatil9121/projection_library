@@ -11,6 +11,7 @@ D3 in ARCHITECTURE.md). Every entry below was checked against its repository's L
 | dotenv | ^17.3.1 | BSD-2-Clause | https://github.com/motdotla/dotenv | Reads `PORT` for the dev server | `index.js` (not deployed) |
 | gl-matrix | 3.4.4 | MIT | https://github.com/toji/gl-matrix | Model transforms (vec3, quat, mat3, mat4) for Transform and instancing. Camera/projection maths stay ours. | Vendored: `public/vendor/gl-matrix@3.4.4/` (ESM build + LICENSE.md), imported only via `public/engine/vendor.js` |
 | ZzFX | 1.3.2 | MIT | https://github.com/KilledByAPixel/ZzFX | Procedural sound effects (sample generator only; playback uses our own mixer) | Vendored: `public/vendor/zzfx@1.3.2/` (ZzFX.js + LICENSE), lazy-imported by `public/engine/Audio.js` |
+| esbuild | 0.25.10 | MIT | https://github.com/evanw/esbuild | Builds the optional single-file bundle (`npm run build`) | devDependency, used only by `tools/build.mjs` (not deployed) |
 
 ## Planned (to be vendored into `public/vendor/` when the phase that needs it lands)
 
@@ -38,6 +39,11 @@ D3 in ARCHITECTURE.md). Every entry below was checked against its repository's L
 | ACES filmic tone-mapping curve (formula) | Krzysztof Narkowicz, 2016, https://knarkowicz.wordpress.com/2016/01/06/aces-filmic-tone-mapping-curve/ | Published formula, reimplemented | `shaders/postprocessing/post.js` |
 | Easing equations | Robert Penner | Published formulas, reimplemented | `engine/Tween.js` |
 | Trauma-based camera shake (idea) | Squirrel Eiserloh, GDC 2016 | Technique, reimplemented | `engine/Juice.js` |
+| GGX microfacet distribution, height-correlated Smith visibility, Schlick Fresnel | Walter et al. 2007; Heitz 2014; Schlick 1994 | Published formulas, reimplemented | `shaders/chunks/lighting.js` |
+| Analytic environment-BRDF fit | Brian Karis, "Physically Based Shading on Mobile", 2014, https://www.unrealengine.com/en-US/blog/physically-based-shading-on-mobile | Published formula, reimplemented | `shaders/chunks/lighting.js` |
+| Ray-triangle intersection | Möller and Trumbore, 1997 | Published algorithm, reimplemented | `engine/Collision.js` |
+| Cascaded shadow maps with stable (sphere-fitted, texel-snapped) cascades | Technique described by Michal Valient, "Stable Rendering of Cascaded Shadow Maps", ShaderX6, 2008 | Technique, reimplemented | `engine/ShadowMap.js` |
+| mulberry32 random number generator | Tommy Ettinger (public domain) | Reimplemented | `examples/shared.js` |
 
 Every ported algorithm or shader gets a header comment with its source URL and license, and
 a row here. Shadertoy code is **not** used unless its author states a compatible license (the default
@@ -47,5 +53,11 @@ Shadertoy license is CC BY-NC-SA, which is not allowed).
 
 | Font | License | Source | Use |
 |---|---|---|---|
-| (display font, TBD in P3) | SIL OFL 1.1 | Google Fonts | UI headings, self-hosted in `public/vendor/fonts/` |
-| (mono font, TBD in P3) | SIL OFL 1.1 | Google Fonts | Code / HUD, self-hosted |
+| Space Grotesk (variable, latin subset) | SIL OFL 1.1 | https://github.com/floriankarsten/space-grotesk | Site and example text, self-hosted: `public/vendor/fonts/SpaceGrotesk-latin.woff2` (licence: `OFL-SpaceGrotesk.txt`) |
+| JetBrains Mono (variable, latin subset) | SIL OFL 1.1 | https://github.com/JetBrains/JetBrainsMono | Code and numbers, self-hosted: `public/vendor/fonts/JetBrainsMono-latin.woff2` (licence: `OFL-JetBrainsMono.txt`) |
+
+## Art
+
+There are no third-party art assets. `public/assets/models/person.glb` and `dog.glb` are generated in code
+(`tools/make-models.mjs` in the Night Market repository) and copied here for the characters example.
+`public/assets/shots/` holds screenshots of this project's own pages and games, captured by `tools/shots.mjs`.

@@ -3,7 +3,7 @@
  * Used by tools/test.mjs (run the browser tests) and tools/shots.mjs (capture example thumbnails).
  *
  *   const browser = await launch();
- *   const page = await browser.page("http://localhost:9600/tests/", { width: 800, height: 600 });
+ *   const page = await browser.page("http://localhost:9600/tests/", { width: 800, height: 600, scheme: "dark" });
  *   const result = await page.evaluate("window.__testResult");
  *   await browser.close();
  *
@@ -65,7 +65,8 @@ export async function launch(options = {}) {
             await new Promise((done, fail) => { ws.onopen = done; ws.onerror = () => fail(new Error("DevTools socket failed")); });
             let id = 0;
             const pending = new Map(), logs = [], errors = [];
-            let loaded = null;
+            let loaded = null, closed = false;
+            ws.onclose = () => { if (!closed) for (const { fail } of pending.values()) fail(new Error("DevTools socket closed")); };
             ws.onmessage = (event) => {
                 const msg = JSON.parse(event.data);
                 if (msg.id && pending.has(msg.id)) {
@@ -85,6 +86,7 @@ export async function launch(options = {}) {
             await send("Page.enable");
             await send("Runtime.enable");
             await send("Emulation.setDeviceMetricsOverride", { width: size.width, height: size.height, deviceScaleFactor: size.scale || 1, mobile: !!size.mobile });
+            if (size.scheme) await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: size.scheme }] });
             const wait = new Promise((r) => { loaded = r; });
             await send("Page.navigate", { url });
             await Promise.race([wait, sleep(30000)]);
@@ -107,19 +109,30 @@ export async function launch(options = {}) {
                         await sleep(100);
                     }
                 },
-                /** @returns {Promise<Buffer>} */
-                async screenshot(format = "jpeg", quality = 82) {
-                    const r = await send("Page.captureScreenshot", { format, quality: format === "jpeg" ? quality : undefined });
+                /** @param {string | null} [selector] capture only this element @returns {Promise<Buffer>} */
+                async screenshot(format = "jpeg", quality = 82, selector = null) {
+                    let clip;
+                    if (selector) {
+                        const box = await page.evaluate(`(() => { const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect(); return { x: r.left, y: r.top, width: r.width, height: r.height }; })()`);
+                        clip = { ...box, scale: 1 };
+                    }
+                    const r = await send("Page.captureScreenshot", { format, quality: format === "jpeg" ? quality : undefined, clip });
                     return Buffer.from(r.data, "base64");
                 },
-                close() { ws.close(); return fetch(`${http}/json/close/${target.id}`).catch(() => {}); },
+                /** Change the viewport size. */
+                resize(width, height) { return send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor: size.scale || 1, mobile: !!size.mobile }); },
+                close() { closed = true; ws.close(); return fetch(`${http}/json/close/${target.id}`).catch(() => {}); },
             };
             return page;
         },
         async close() {
+            // wait for Chrome to be gone before removing its profile, and leave nothing for Node to wait on
+            const gone = new Promise((r) => child.once("exit", r));
             child.kill();
-            await sleep(300);
-            await rm(profile, { recursive: true, force: true }).catch(() => {});
+            await Promise.race([gone, sleep(3000)]);
+            child.stderr.destroy();
+            await sleep(200);
+            await rm(profile, { recursive: true, force: true, maxRetries: 3, retryDelay: 200 }).catch(() => {});
         },
     };
 }

@@ -25,4 +25,4 @@ try {
     await browser.close();
     await server.close();
 }
-process.exit(code);
+setTimeout(() => process.exit(code), 300);

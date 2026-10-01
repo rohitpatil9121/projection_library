@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Materials · Projection Lab</title>
+    <meta name="description" content="Physically based materials: a grid of spheres from plastic to metal and from mirror to chalk, on a normal-mapped tiled floor.">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="example.css">
+</head>
+<body>
+    <canvas id="view" aria-label="Five rows of spheres on a tiled floor: each row is more metallic than the one before, each column rougher"></canvas>
+    <div class="panel">
+        <a class="back" href="./">Examples</a>
+        <h1>Materials</h1>
+        <p>PBRMaterial. Front row is plastic, back row is metal. Left is mirror-smooth, right is chalk-rough. The floor's bevels come from a normal map made in code.</p>
+        <label><input type="checkbox" id="normals" checked> Normal map on the floor</label>
+        <label><input type="checkbox" id="lamps" checked> Moving lamps</label>
+        <label>Reflections <input type="range" id="env" min="0" max="3" step="0.1" value="2"></label>
+    </div>
+    <script type="module">
+        import { Game, Entity, Mesh, InstancedMesh, PBRMaterial, StandardMaterial, Texture, ShadowMap, PostFX, primitives } from "../engine/index.js";
+        import { orbit, ready } from "./shared.js";
+
+        const game = new Game({ canvas: document.getElementById("view"), antialias: false });
+        if (!game.failed) {
+            const { scene, camera, renderer } = game;
+            renderer.postfx = new PostFX(renderer, { ao: { enabled: true, radius: 0.5 }, bloom: { threshold: 1.0, intensity: 0.55 }, vignette: 0.3 });
+            scene.clearColor.set([0.09, 0.1, 0.14, 1]);
+            scene.sunDirection.set([0.4, -0.55, 0.73]);
+            scene.sunColor.set([1.0, 0.93, 0.82]);
+            // these two colours are also what the spheres reflect: a bright sky over a dim floor
+            scene.skyColor.set([0.42, 0.52, 0.72]);
+            scene.groundColor.set([0.16, 0.13, 0.11]);
+            scene.fogColor.set([0.09, 0.1, 0.14]); scene.fogDensity = 0.012;
+            scene.shadow = new ShadowMap({ center: [0, 0, 0], extent: [11, 11], depth: 50, size: 2048, strength: 0.8 });
+
+            // Tiles: a height field (flat tops, sloped edges, a groove between) turned into a normal map by
+            // taking the slope between neighbouring texels, plus a matching colour map.
+            const N = 256, TILES = 4, height = new Float32Array(N * N);
+            const tile = (v) => { const t = (v * TILES) % 1, edge = Math.min(t, 1 - t); return Math.min(1, edge / 0.08); };
+            for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) height[y * N + x] = Math.min(tile(x / N), tile(y / N));
+            const normal = new Uint8Array(N * N * 4), colour = new Uint8Array(N * N * 4);
+            for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+                const h = (i, j) => height[((j + N) % N) * N + ((i + N) % N)];
+                const dx = (h(x + 1, y) - h(x - 1, y)) * 2.2, dy = (h(x, y + 1) - h(x, y - 1)) * 2.2, l = Math.hypot(dx, dy, 1), o = (y * N + x) * 4;
+                normal[o] = (-dx / l * 0.5 + 0.5) * 255; normal[o + 1] = (-dy / l * 0.5 + 0.5) * 255; normal[o + 2] = (1 / l * 0.5 + 0.5) * 255; normal[o + 3] = 255;
+                const dark = (Math.floor(x / N * TILES) + Math.floor(y / N * TILES)) % 2, shade = (dark ? 0.5 : 0.62) * (0.55 + 0.45 * h(x, y));
+                colour[o] = shade * 235; colour[o + 1] = shade * 240; colour[o + 2] = shade * 255; colour[o + 3] = 255;
+            }
+            const floorGeometry = primitives.plane(36, 36);
+            for (let i = 0; i < floorGeometry.uvs.length; i++) floorGeometry.uvs[i] *= 4.5;       // repeat the texture
+            const normalMap = new Texture({ data: normal, width: N, height: N });
+            const floor = new PBRMaterial({ map: new Texture({ data: colour, width: N, height: N }), normalMap, roughness: 0.42, metallic: 0 });
+            game.add(new Entity({ mesh: new Mesh(floorGeometry, floor) }));
+
+            const ROWS = 5, COLS = 6, ball = primitives.sphere(0.72, 48, 32), materials = [];
+            const tints = [[0.9, 0.22, 0.2], [0.95, 0.6, 0.2], [0.92, 0.92, 0.94], [1.0, 0.77, 0.34], [0.96, 0.64, 0.54]];
+            for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+                const m = new PBRMaterial({ color: tints[r], metallic: r / (ROWS - 1), roughness: 0.06 + (c / (COLS - 1)) * 0.86, envIntensity: 2 });
+                materials.push(m);
+                const e = game.add(new Entity({ mesh: new Mesh(ball, m) }));
+                e.setPosition((c - (COLS - 1) / 2) * 1.9, (r - (ROWS - 1) / 2) * 1.9, 0.72);
+            }
+
+            // two lamps that circle the grid: their highlights show roughness better than any still picture
+            const lamps = [{ color: [2.6, 1.2, 0.5], phase: 0 }, { color: [0.5, 1.3, 2.8], phase: Math.PI }].map((l) => {
+                const light = { position: [0, 0, 2.4], color: l.color, radius: 11 };
+                scene.pointLights.push(light);
+                const bulb = game.add(new Entity({ castShadow: false, mesh: new Mesh(primitives.sphere(0.14, 12, 8), new StandardMaterial({ lit: false, color: l.color.map((v) => v * 1.6), castShadow: false })) }));
+                return { ...l, light, bulb };
+            });
+            let lampTime = 0;
+            const place = () => {
+                for (const l of lamps) {
+                    const a = lampTime * 0.55 + l.phase, x = Math.cos(a) * 6.4, y = Math.sin(a) * 5.2;
+                    l.light.position = [x, y, 2.4];
+                    l.bulb.setPosition(x, y, 2.4);
+                }
+            };
+            place();
+
+            camera.distance = 14; camera.pitch = 0.55; camera.yaw = -1.32; camera.target.set([0, 0, 0.4]);
+            orbit(game, { minDistance: 5, maxDistance: 45, minPitch: 0.08 });
+
+            const $ = (id) => document.getElementById(id);
+            game.onUpdate((dt) => { if ($("lamps").checked) { lampTime += dt; place(); } });
+            $("normals").addEventListener("change", (e) => { floor.normalMap = e.target.checked ? normalMap : null; floor.invalidateProgram(); });
+            $("env").addEventListener("input", (e) => { for (const m of materials) m.envIntensity = +e.target.value; });
+            game.start();
+            ready(game, { materials });
+        }
+    </script>
+</body>
+</html>

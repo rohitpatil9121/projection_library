@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Examples · Projection Lab</title>
+    <meta name="description" content="Live examples for the Projection Lab WebGL engine: shadows, PBR materials, skinned characters, instancing, particles, picking and custom shaders.">
+    <meta property="og:title" content="Projection Lab examples">
+    <meta property="og:description" content="Shadows, PBR materials, skinned characters, instancing, particles, picking and custom shaders, each on one page you can read.">
+    <meta property="og:image" content="https://rohitpatil9121.github.io/projection_library/assets/shots/open-world.jpg">
+    <meta name="twitter:card" content="summary_large_image">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="../site/site.css">
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav">
+        <div class="wrap">
+            <a class="brand" href="../"><img src="../favicon.svg" alt="" width="26" height="26"><span>Projection Lab</span></a>
+            <nav aria-label="Main">
+                <a href="./" aria-current="page">Examples</a>
+                <a href="../docs/">Docs</a>
+                <a href="../#games">Games</a>
+                <a href="https://github.com/rohitpatil9121/projection_library">GitHub</a>
+            </nav>
+        </div>
+    </header>
+
+    <main id="main" class="wrap">
+        <div class="page-head">
+            <h1>Examples</h1>
+            <p>Each one is a single HTML file with its script inline. Open it, then view the source: that is the whole example.</p>
+        </div>
+        <div class="gallery">
+            <a class="card reveal" href="open-world.html">
+                <div class="frame"><img src="../assets/shots/open-world.jpg" alt="A figure in a low-poly forest with long shadows" width="960" height="600"></div>
+                <h2>Open world</h2>
+                <p>Walk through a 480 m forest. Shadows stay sharp near you and reach the horizon; what you can't see isn't drawn.</p>
+                <p class="uses">ShadowMap cascades, culling, Entity.lod, slideCircle, TouchControls</p>
+            </a>
+            <a class="card reveal" style="--i:1" href="materials.html">
+                <div class="frame"><img src="../assets/shots/materials.jpg" alt="Rows of spheres from plastic to metal on a tiled floor" loading="lazy" width="960" height="600"></div>
+                <h2>Materials</h2>
+                <p>Thirty spheres from plastic to metal and from mirror to chalk, on a floor whose bevels are a normal map.</p>
+                <p class="uses">PBRMaterial, normalMap, point lights, ambient occlusion</p>
+            </a>
+            <a class="card reveal" style="--i:2" href="characters.html">
+                <div class="frame"><img src="../assets/shots/characters.jpg" alt="A crowd of small figures walking in two rings" loading="lazy" width="960" height="600"></div>
+                <h2>Characters</h2>
+                <p>Forty animated people from one glTF file. One skeleton, one material, a palette each.</p>
+                <p class="uses">loadGLTF, SkinnedMesh, Animator, palettes</p>
+            </a>
+            <a class="card reveal" href="lit-scene.html">
+                <div class="frame"><img src="../assets/shots/lit-scene.jpg" alt="Boxes and spheres on a floor lit by a sun and two coloured lamps" loading="lazy" width="960" height="600"></div>
+                <h2>Lit scene</h2>
+                <p>The light system with switches: sun shadows, point lights and ambient occlusion on and off.</p>
+                <p class="uses">StandardMaterial, ShadowMap, PostFX, Texture</p>
+            </a>
+            <a class="card reveal" style="--i:1" href="particles.html">
+                <div class="frame"><img src="../assets/shots/particles.jpg" alt="Comets with light trails around a glowing star" loading="lazy" width="960" height="600"></div>
+                <h2>Particles and bloom</h2>
+                <p>Comets, trails and bursts over a procedural sky. Click for more.</p>
+                <p class="uses">ParticleSystem, Trail, GlowMaterial, Sky, bloom</p>
+            </a>
+            <a class="card reveal" style="--i:2" href="water.html">
+                <div class="frame"><img src="../assets/shots/water.jpg" alt="Crates and a lit buoy on rolling water at dusk" loading="lazy" width="960" height="600"></div>
+                <h2>Custom shader</h2>
+                <p>Rolling water in your own GLSL that still takes the scene's sun, lamp, shadows and fog.</p>
+                <p class="uses">ShaderMaterial, projection and lighting chunks</p>
+            </a>
+            <a class="card reveal" href="picking.html">
+                <div class="frame"><img src="../assets/shots/picking.jpg" alt="A field of coloured shapes seen from above" loading="lazy" width="960" height="600"></div>
+                <h2>Picking</h2>
+                <p>Point at a shape. A ray from the camera finds the triangle under the pointer.</p>
+                <p class="uses">Camera.screenRay, Scene.raycast, Tweens</p>
+            </a>
+            <a class="card reveal" style="--i:1" href="../experiments/instancing/">
+                <div class="frame"><img src="../assets/shots/instancing.jpg" alt="A disc of one hundred thousand cubes" loading="lazy" width="960" height="600"></div>
+                <h2>Instancing benchmark</h2>
+                <p>Up to 200,000 cubes in one draw call, with live numbers.</p>
+                <p class="uses">InstancedMesh</p>
+            </a>
+            <a class="card reveal" style="--i:2" href="../prime-walk.html">
+                <div class="frame"><img src="../assets/shots/prime-walk.jpg" alt="A winding path of coloured cubes with gold cubes at the turns" loading="lazy" width="960" height="600"></div>
+                <h2>Prime Walk 3D</h2>
+                <p>Step once per integer, turn at every prime. The demo the project began with.</p>
+                <p class="uses">InstancedMesh, self-lit instances, bloom</p>
+            </a>
+            <a class="card reveal" href="first-scene.html">
+                <div class="frame"><img src="../assets/shots/first-scene.jpg" alt="A gold sphere casting a shadow on a pale floor" loading="lazy" width="960" height="600"></div>
+                <h2>First scene</h2>
+                <p>The dozen lines from the front page, running.</p>
+                <p class="uses">Game, Entity, Mesh</p>
+            </a>
+        </div>
+    </main>
+
+    <footer>
+        <div class="wrap">
+            <p>Projection Lab, built on projection_library by Rohit Sawant.</p>
+            <nav aria-label="Footer">
+                <a href="../">Home</a>
+                <a href="../docs/">Docs</a>
+                <a href="../tests/">Tests</a>
+                <a href="https://github.com/rohitpatil9121/projection_library/tree/main/public/examples">Source of these pages</a>
+            </nav>
+        </div>
+    </footer>
+    <script type="module" src="../site/site.js"></script>
+</body>
+</html>

@@ -1,0 +1,44 @@
+/* Shared look of the example pages: a full-window canvas with one small panel. */
+@font-face { font-family: "Space Grotesk"; src: url("../vendor/fonts/SpaceGrotesk-latin.woff2") format("woff2"); font-weight: 300 700; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("../vendor/fonts/JetBrainsMono-latin.woff2") format("woff2"); font-weight: 400 700; font-display: swap; }
+
+:root {
+    --ink: #eef0f6;
+    --dim: #a4abc0;
+    --panel: rgba(12, 13, 20, 0.8);
+    --line: rgba(255, 255, 255, 0.14);
+    --accent: #f5c542;
+}
+
+html, body { margin: 0; height: 100%; background: #0b0c12; color: var(--ink); font: 14px/1.5 "Space Grotesk", system-ui, sans-serif; overflow: hidden; }
+canvas#view { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+canvas#view:active { cursor: grabbing; }
+
+.panel {
+    position: fixed; left: 12px; top: 12px; width: min(300px, calc(100% - 24px)); box-sizing: border-box;
+    padding: 12px 14px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line);
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+}
+@media (prefers-reduced-transparency: reduce) { .panel { background: #0c0d14; backdrop-filter: none; -webkit-backdrop-filter: none; } }
+.panel a.back { color: var(--dim); text-decoration: none; font-size: 12px; }
+.panel a.back:hover, .panel a.back:focus-visible { color: var(--accent); }
+.panel h1 { margin: 2px 0 4px; font-size: 17px; font-weight: 600; letter-spacing: -0.01em; }
+.panel p { margin: 0 0 8px; color: var(--dim); font-size: 13px; }
+.panel label { display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 2px 0; }
+.panel input[type="checkbox"], .panel input[type="range"] { accent-color: var(--accent); }
+.panel input[type="range"] { flex: 1; min-width: 0; }
+.panel .row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.panel button {
+    font: inherit; font-weight: 500; color: var(--ink); background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line);
+    border-radius: 8px; padding: 5px 10px; min-height: 32px; cursor: pointer; transition: transform 0.12s, border-color 0.12s;
+}
+.panel button:hover { border-color: var(--accent); }
+.panel button:active { transform: translateY(1px); }
+.panel button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #17130a; }
+.panel button:focus-visible, .panel a:focus-visible, .panel input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.panel .stats { margin-top: 8px; font: 12px/1.5 "JetBrains Mono", ui-monospace, monospace; color: var(--dim); font-variant-numeric: tabular-nums; white-space: pre-line; }
+
+@media (max-width: 560px) {
+    .panel p { display: none; }
+    .panel { padding: 8px 12px 10px; }
+}

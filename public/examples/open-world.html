@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Open world · Projection Lab</title>
+    <meta name="description" content="A 480 m forest you can walk through: cascaded shadows, frustum culling, levels of detail, collision and touch controls.">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="example.css">
+</head>
+<body>
+    <canvas id="view" aria-label="A figure walking through a low-poly forest under a low sun; trees cast long shadows"></canvas>
+    <div class="panel">
+        <a class="back" href="./">Examples</a>
+        <h1>Open world</h1>
+        <p>Walk with WASD or the arrow keys (a joystick appears on touch screens). Drag to look around. Watch the culled count as you turn.</p>
+        <label><input type="checkbox" id="cascades" checked> Cascaded shadows</label>
+        <label><input type="checkbox" id="culling" checked> Frustum culling</label>
+        <label><input type="checkbox" id="lod" checked> Levels of detail</label>
+        <div class="stats" id="stats"></div>
+    </div>
+    <script type="module">
+        import { Game, Entity, Mesh, Geometry, StandardMaterial, ShadowMap, PostFX, TouchControls, primitives, slideCircle, mat4 } from "../engine/index.js";
+        import { ready, random } from "./shared.js";
+
+        const game = new Game({ canvas: document.getElementById("view"), antialias: false });
+        if (!game.failed) {
+            const { scene, camera, renderer, input } = game;
+            renderer.postfx = new PostFX(renderer, { bloom: { threshold: 1.2, intensity: 0.4 }, vignette: 0.28, grain: 0.015, saturation: 1.08 });
+            const SKY = [0.62, 0.74, 0.9];
+            scene.clearColor.set([...SKY, 1]);
+            scene.sunDirection.set([0.55, -0.38, 0.5].map((v) => v / Math.hypot(0.55, 0.38, 0.5)));
+            scene.sunColor.set([1.05, 0.9, 0.7]);
+            scene.skyColor.set([0.32, 0.4, 0.56]);
+            scene.groundColor.set([0.2, 0.18, 0.14]);
+            scene.fogColor.set(SKY); scene.fogDensity = 0.006;
+            camera.far = 700;
+
+            const cascaded = new ShadowMap({ cascades: 3, distance: 150, size: 1536, strength: 0.75 });
+            // the alternative: one box stretched over the whole forest, so each texel covers a third of a metre
+            const fixed = new ShadowMap({ center: [0, 0, 0], extent: [240, 240], depth: 200, size: 1536, strength: 0.75 });
+            scene.shadow = cascaded;
+
+            const SIZE = 480, CHUNK = 40, rand = random(7);
+            game.add(new Entity({ mesh: new Mesh(primitives.plane(SIZE + 400, SIZE + 400), new StandardMaterial({ color: [0.36, 0.5, 0.3] })) }));
+
+            // one tree at two levels of detail, built from the same primitives
+            const at = (x, y, z, s = 1, sz = s) => mat4.fromRotationTranslationScale(mat4.create(), [0, 0, 0, 1], [x, y, z], [s, s, sz]);
+            const tree = (segments, tiers) => {
+                const parts = [{ geometry: primitives.cylinder(0.22, 0.3, 1.6, Math.max(4, segments >> 1), false), matrix: at(0, 0, 0.8), color: [0.36, 0.25, 0.17] }];
+                for (let t = 0; t < tiers; t++) parts.push({ geometry: primitives.cone(1.5 - t * 0.38, 2.1, segments), matrix: at(0, 0, 2.2 + t * 1.15), color: [0.16 + t * 0.04, 0.42 + t * 0.06, 0.24] });
+                return Geometry.merge(parts);
+            };
+            const fineTree = tree(10, 3), coarseTree = tree(5, 1);
+            const leaves = new StandardMaterial({ vertexColors: true });
+
+            // the forest is cut into chunks; each chunk is one mesh, so it is one draw call and can be culled as a whole
+            const walls = [], chunks = [];
+            const half = SIZE / 2;
+            for (let cx = -half; cx < half; cx += CHUNK) for (let cy = -half; cy < half; cy += CHUNK) {
+                const fine = [], coarse = [];
+                for (let i = 0; i < 16; i++) {
+                    const x = rand() * CHUNK, y = rand() * CHUNK, s = 0.8 + rand() * 1.3;
+                    if (Math.hypot(cx + x, cy + y) < 9) continue;       // a clearing where the player starts
+                    fine.push({ geometry: fineTree, matrix: at(x, y, 0, s, s * (0.9 + rand() * 0.5)) });
+                    coarse.push({ geometry: coarseTree, matrix: at(x, y, 0, s, s * 1.5) });
+                    const r = 0.3 * s;
+                    walls.push({ min: [cx + x - r, cy + y - r, 0], max: [cx + x + r, cy + y + r, 4] });
+                }
+                if (!fine.length) continue;
+                const levels = [
+                    { distance: 0, mesh: new Mesh(Geometry.merge(fine), leaves) },
+                    { distance: 110, mesh: new Mesh(Geometry.merge(coarse), leaves) },
+                    { distance: 330, mesh: null },
+                ];
+                const e = game.add(new Entity({ lod: levels, mesh: levels[0].mesh }));
+                e.setPosition(cx, cy, 0);
+                e.interpolate = false;
+                chunks.push({ entity: e, levels });
+            }
+            // a ring of standing stones around the clearing, to walk into
+            const stone = new StandardMaterial({ color: [0.62, 0.62, 0.66] });
+            for (let i = 0; i < 9; i++) {
+                const a = (i / 9) * Math.PI * 2 + 0.3, x = Math.cos(a) * 7, y = Math.sin(a) * 7, h = 1.6 + rand() * 1.6;
+                const e = game.add(new Entity({ mesh: new Mesh(primitives.box(1.1, 0.8, h), stone) }));
+                e.setPosition(x, y, h / 2);
+                walls.push({ min: [x - 0.55, y - 0.4, 0], max: [x + 0.55, y + 0.4, h] });
+            }
+
+            const player = game.add(new Entity({ name: "player", mesh: new Mesh(primitives.capsule(0.35, 0.9), new StandardMaterial({ color: [0.95, 0.42, 0.25] })) }));
+            player.setPosition(0, 0, 0.8);
+            camera.setFollow(player, { damping: 7, lookAhead: 0.12, offset: [0, 0, 0.9] });
+            camera.distance = 17; camera.pitch = 0.4; camera.yaw = -2.2;
+
+            input.bindAxis("moveX", { negative: ["KeyA", "ArrowLeft"], positive: ["KeyD", "ArrowRight"], gamepad: "LeftX" });
+            input.bindAxis("moveY", { negative: ["KeyS", "ArrowDown"], positive: ["KeyW", "ArrowUp"] });
+            const touch = new TouchControls(input);
+            touch.joystick({ x: "moveX", y: "moveY" });
+
+            // only the walls near the player are worth testing: bucket them by chunk once
+            const buckets = new Map(), key = (x, y) => Math.floor(x / CHUNK) + "," + Math.floor(y / CHUNK);
+            for (const w of walls) { const k = key(w.min[0], w.min[1]); (buckets.get(k) || buckets.set(k, []).get(k)).push(w); }
+            const nearby = [];
+            let auto = true;      // until someone takes the controls, the camera circles the clearing
+
+            game.onUpdate((dt) => {
+                const p = input.pointer;
+                if (p.dragging) camera.orbit(-p.dx * 0.006, p.dy * 0.006);
+                if (p.wheel) camera.zoom(Math.exp(p.wheel * 0.001));
+                camera.distance = Math.max(4, Math.min(60, camera.distance));
+                camera.pitch = Math.max(0.06, camera.pitch);
+
+                let mx = input.axis("moveX"), my = input.axis("moveY");
+                if (mx || my) auto = false;
+                if (auto) camera.yaw += dt * 0.1;
+                const m = Math.hypot(mx, my);
+                if (m > 0) {
+                    // "up" on the stick is away from the camera, flattened onto the ground
+                    const fx = camera.forward[0], fy = camera.forward[1], fl = Math.hypot(fx, fy) || 1;
+                    const dx = (camera.right[0] * mx + (fx / fl) * my) / Math.max(1, m), dy = (camera.right[1] * mx + (fy / fl) * my) / Math.max(1, m);
+                    const speed = 7;
+                    player.position[0] = Math.max(-half, Math.min(half, player.position[0] + dx * speed * dt));
+                    player.position[1] = Math.max(-half, Math.min(half, player.position[1] + dy * speed * dt));
+                    player.setYaw(Math.atan2(dy, dx));
+                    nearby.length = 0;
+                    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) {
+                        const b = buckets.get(key(player.position[0] + i * CHUNK, player.position[1] + j * CHUNK));
+                        if (b) for (const w of b) nearby.push(w);
+                    }
+                    slideCircle(player.position, 0.35, nearby);
+                }
+            });
+
+            const $ = (id) => document.getElementById(id), stats = $("stats");
+            $("cascades").addEventListener("change", (e) => { scene.shadow = e.target.checked ? cascaded : fixed; });
+            $("culling").addEventListener("change", (e) => { renderer.frustumCulling = e.target.checked; });
+            $("lod").addEventListener("change", (e) => {
+                for (const c of chunks) { c.entity.lod = e.target.checked ? c.levels : null; c.entity.mesh = c.levels[0].mesh; }
+            });
+            let since = 1;
+            game.onRender((dt) => {
+                if ((since += dt) < 0.25) return;
+                since = 0;
+                const s = renderer.stats;
+                stats.textContent = `${s.drawCalls} draws, ${s.culled} culled of ${chunks.length + 11}\n${s.shadowCalls} shadow draws\n${(s.triangles / 1000).toFixed(0)}k triangles  ${Math.round(game.loop.fps)} fps`;
+            });
+            game.start();
+            ready(game, { chunks, walls });
+        }
+    </script>
+</body>
+</html>

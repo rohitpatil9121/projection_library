@@ -1,0 +1,1006 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>API reference · Projection Lab</title>
+    <meta name="description" content="Every exported class, function and constant of the Projection Lab engine, with the comments from the source.">
+    <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="../site/site.css">
+</head>
+<body>
+    <a class="skip" href="#main">Skip to content</a>
+    <header class="nav">
+        <div class="wrap">
+            <a class="brand" href="../"><img src="../favicon.svg" alt="" width="26" height="26"><span>Projection Lab</span></a>
+            <nav aria-label="Main">
+                <a href="../examples/">Examples</a>
+                <a href="./" aria-current="page">Docs</a>
+                <a href="../#games">Games</a>
+                <a href="https://github.com/rohitpatil9121/projection_library">GitHub</a>
+            </nav>
+        </div>
+    </header>
+    <div class="wrap docs">
+        <aside aria-label="Modules">
+            <h2>Docs</h2>
+            <a href="./">Getting started</a>
+<h2>Core</h2>
+<a href="#engine-Game-js">Game</a>
+<a href="#engine-Renderer-js">Renderer</a>
+<a href="#engine-Scene-js">Scene</a>
+<a href="#engine-Entity-js">Entity</a>
+<a href="#engine-Transform-js">Transform</a>
+<a href="#engine-Camera-js">Camera</a>
+<a href="#engine-Loop-js">Loop</a>
+<a href="#engine-config-js">config</a>
+<h2>Geometry and materials</h2>
+<a href="#engine-Geometry-js">Geometry</a>
+<a href="#engine-geometry-primitives-js">geometry/primitives</a>
+<a href="#engine-Mesh-js">Mesh</a>
+<a href="#engine-Material-js">Material</a>
+<a href="#engine-Texture-js">Texture</a>
+<h2>Light and effects</h2>
+<a href="#engine-ShadowMap-js">ShadowMap</a>
+<a href="#engine-PostFX-js">PostFX</a>
+<a href="#engine-Sky-js">Sky</a>
+<a href="#engine-ParticleSystem-js">ParticleSystem</a>
+<a href="#engine-Trail-js">Trail</a>
+<a href="#shaders-chunks-projection-js">chunks/projection</a>
+<a href="#shaders-chunks-lighting-js">chunks/lighting</a>
+<h2>Models and animation</h2>
+<a href="#engine-loaders-GLTF-js">loaders/GLTF</a>
+<a href="#engine-Animation-js">Animation</a>
+<h2>Input and gameplay</h2>
+<a href="#engine-Input-js">Input</a>
+<a href="#engine-TouchControls-js">TouchControls</a>
+<a href="#engine-Collision-js">Collision</a>
+<a href="#engine-Tween-js">Tween</a>
+<a href="#engine-Juice-js">Juice</a>
+<a href="#engine-Audio-js">Audio</a>
+<a href="#engine-DebugOverlay-js">DebugOverlay</a>
+<h2>WebGL plumbing</h2>
+<a href="#engine-gl-GLContext-js">gl/GLContext</a>
+<a href="#engine-gl-ShaderProgram-js">gl/ShaderProgram</a>
+<a href="#engine-gl-RenderTarget-js">gl/RenderTarget</a>
+        </aside>
+        <article id="main">
+            <h1>API reference</h1>
+            <p class="lede">Generated from the comments in the source by <code>npm run docs</code>. Import everything from <code>engine/index.js</code>.</p>
+<section class="api-module" id="engine-Game-js">
+<h2>Game</h2>
+<p class="path">public/engine/Game.js</p>
+<div class="api-doc">Game: the high-level facade that wires Renderer, Scene, Camera, Input and Loop together.
+
+  const game = new Game({ canvas, quality: "high" });
+  game.add(new Entity({ mesh: new Mesh(box(), new BasicMaterial()) }));
+  game.onUpdate((dt) =&gt; { ... });   // fixed 60 Hz steps
+  game.start();
+
+If WebGL is unavailable, `game.failed` is true, a readable message replaces the canvas, and start()
+does nothing, so a page never shows a blank screen.</div>
+<div class="api-item" id="engine-Game-js-Game"><h3><span class="kind">class</span>Game</h3>
+<div class="api-members">
+<div><div class="sig">constructor(options)</div><div class="api-doc">@param {{ canvas: HTMLCanvasElement, quality?: "low" | "medium" | "high" | "ultra", camera?: Camera,
+          preferWebGL2?: boolean, antialias?: boolean, container?: HTMLElement }} options</div></div>
+<div><div class="sig">add(entity, parent)</div><div class="api-doc">Add an entity to the scene (optionally under a parent entity).</div></div>
+<div><div class="sig">onUpdate(fn)</div><div class="api-doc">Run `fn(dt, game)` every fixed simulation step (dt = 1/60 s × timeScale semantics via the Loop).</div></div>
+<div><div class="sig">onRender(fn)</div><div class="api-doc">Run `fn(frameDelta, alpha, game)` every rendered frame, before drawing (camera controls, UI).</div></div>
+<div><div class="sig">get time()</div><div class="api-doc">Seconds of simulated time.</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-Renderer-js">
+<h2>Renderer</h2>
+<p class="path">public/engine/Renderer.js</p>
+<div class="api-doc">Renderer: draws a Scene through a Camera.
+
+Per frame:
+  1. resize the drawing buffer if the canvas CSS size / DPR / quality changed (ResizeObserver)
+  2. update world matrices (interpolated by the loop's alpha)
+  3. collect meshes into reused opaque / transparent lists, skipping those outside the camera's view
+     (frustum culling, see below) and picking each entity's level of detail
+  4. shadow pass: if scene.shadow is set, draw the opaque casters from the sun into its depth texture
+  5. opaque: sorted by program to minimise state changes; transparent: back to front
+  6. per program, per frame: camera, lights, fog and shadow uniforms are set once (frame stamp)
+  7. per draw: material uniforms, then the mesh's own, model matrix, bind VAO, draw (instanced when needed)
+
+Optional stages:
+  scene.sky        drawn first as a full-screen background (engine/Sky)
+  scene.shadow     sun shadows (engine/ShadowMap)
+  renderer.postfx  when set and enabled, the scene renders into its HDR target and PostFX finishes
+                   the frame (ambient occlusion, bloom, tone mapping...) on the screen
+
+Engine uniforms every material may declare: u_camPos, u_camRight, u_camUp, u_camForward, u_proj,
+u_time (seconds, set via renderer.time), u_viewport (drawing buffer px), u_model, u_normalMatrix,
+u_sunDirection, u_sunColor, u_skyColor, u_groundColor, u_pointPos, u_pointColor, u_pointCount, u_fog,
+u_shadowMap, u_shadowMatrix, u_shadowParams, u_shadowCascade, and u_joints (or u_jointTexture) on skinned meshes.
+A material or mesh uniform whose value is a Texture is bound to the next free texture unit.
+
+Frustum culling. What the camera sees is a pyramid with its top cut off (a frustum): four side planes
+through the eye, plus near and far. Every mesh has a bounding sphere (Geometry.computeBounds), moved and
+scaled by its entity. If the sphere lies wholly outside any one of the six planes, nothing of the mesh
+can be on screen and it is not drawn. The test runs in camera space with the same three dot products
+the vertex shader uses. Instanced, skinned and dynamic meshes and custom shaders have no trustworthy
+sphere and are always drawn, unless you give the entity one: `entity.cullRadius = 3`.
+Shadow casters are collected before culling: something behind you can still throw a shadow into view.
+
+`stats` counts draw calls, culled meshes, vertices, triangles and instances for a performance HUD.</div>
+<div class="api-item" id="engine-Renderer-js-RendererError"><h3><span class="kind">class</span>RendererError extends Error</h3>
+</div>
+<div class="api-item" id="engine-Renderer-js-Renderer"><h3><span class="kind">class</span>Renderer</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Scene-js">
+<h2>Scene</h2>
+<p class="path">public/engine/Scene.js</p>
+<div class="api-doc">Scene: the root of the entity tree, plus the environment settings the Renderer reads.</div>
+<div class="api-item" id="engine-Scene-js-Scene"><h3><span class="kind">class</span>Scene</h3>
+<div class="api-members">
+<div><div class="sig">add(entity, parent = this.root)</div><div class="api-doc">@param {Entity} entity @param {Entity} [parent]</div></div>
+<div><div class="sig">remove(entity)</div><div class="api-doc">@param {Entity} entity</div></div>
+<div><div class="sig">snapshot()</div><div class="api-doc">Store previous poses before a fixed step (for render interpolation).</div></div>
+<div><div class="sig">update(dt)</div><div class="api-doc">Run one fixed step for every entity, then remove destroyed ones.</div></div>
+<div><div class="sig">traverse(fn, node = this.root)</div><div class="api-doc">@param {(e: Entity) =&gt; void} fn</div></div>
+<div><div class="sig">raycast(ray, options)</div><div class="api-doc">What does a ray hit? Nearest first. See engine/Collision.raycast for the options.
+  scene.raycast(camera.screenRay(pointer.x, pointer.y, canvas.clientWidth, canvas.clientHeight))[0]
+@param {{ origin: ArrayLike&lt;number&gt;, direction: ArrayLike&lt;number&gt; }} ray</div></div>
+<div><div class="sig">find(name)</div><div class="api-doc">Find the first entity with a name.</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-Entity-js">
+<h2>Entity</h2>
+<p class="path">public/engine/Entity.js</p>
+<div class="api-doc">Entity: a Transform that can carry a Mesh and behaviour.
+
+  const cube = new Entity({ name: "cube", mesh: new Mesh(box(), new BasicMaterial()) });
+  cube.onUpdate((dt, e) =&gt; e.setYaw(e.age));</div>
+<div class="api-item" id="engine-Entity-js-Entity"><h3><span class="kind">class</span>Entity extends Transform</h3>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {{ name?: string, mesh?: import("./Mesh.js").Mesh | null, visible?: boolean, staticShadow?: boolean, castShadow?: boolean,
+          frustumCulled?: boolean, cullRadius?: number, lod?: Array&lt;{ distance: number, mesh: import("./Mesh.js").Mesh | null }&gt;, tags?: string[] }} [options]</div></div>
+<div><div class="sig">onUpdate(fn)</div><div class="api-doc">Add a per-step behaviour. Returns a function that removes it.</div></div>
+<div><div class="sig">update(dt)</div><div class="api-doc">Called once per fixed step by the Scene.</div></div>
+<div><div class="sig">destroy()</div><div class="api-doc">Remove from the scene at the end of the current step.</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-Transform-js">
+<h2>Transform</h2>
+<p class="path">public/engine/Transform.js</p>
+<div class="api-doc">Transform: position, rotation (quaternion), scale, and a parent/children hierarchy.
+
+Fixed-timestep interpolation: the simulation moves objects at 60 Hz, but the screen may refresh at 144 Hz.
+Before each simulation step, `snapshot()` stores the previous pose. When rendering, the world matrix is
+built from the pose blended between previous and current by `alpha` (0..1, from the Loop), so motion
+stays smooth at any refresh rate.</div>
+<div class="api-item" id="engine-Transform-js-Transform"><h3><span class="kind">class</span>Transform</h3>
+<div class="api-members">
+<div><div class="sig">setRotationEuler(x, y, z)</div><div class="api-doc">Rotation from Euler angles in radians, applied in Z (yaw), then Y, then X order.</div></div>
+<div><div class="sig">setYaw(angle)</div><div class="api-doc">Rotate around world Z (yaw), convenient in a Z-up world.</div></div>
+<div><div class="sig">teleport()</div><div class="api-doc">Place the object at its current pose with no interpolation from the old one (use after teleporting).</div></div>
+<div><div class="sig">add(child)</div><div class="api-doc">@param {Transform} child</div></div>
+<div><div class="sig">remove(child)</div><div class="api-doc">@param {Transform} child</div></div>
+<div><div class="sig">snapshot()</div><div class="api-doc">Store the current pose as the "previous" pose (called before each fixed update).</div></div>
+<div><div class="sig">updateWorldMatrix(alpha = 1, parentWorld = null)</div><div class="api-doc">Recompute world matrices for this subtree.
+@param {number} [alpha=1] interpolation factor between previous and current pose
+@param {Float32Array | null} [parentWorld]</div></div>
+<div><div class="sig">getWorldPosition(out = vec3.create())</div><div class="api-doc">World-space position from the last updateWorldMatrix().</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-Camera-js">
+<h2>Camera</h2>
+<p class="path">public/engine/Camera.js</p>
+<div class="api-doc">Camera: the projection_library camera, generalised.
+
+WORLD: Z is up.
+
+ORBIT (the original Space model). The camera sits on a sphere of radius `distance` (Rc) around a
+`target` (X0, Y0, Z0), steered by `yaw` (alpha, around Z) and `pitch` (beta, above the XY plane):
+
+    eye.x = target.x + cos(pitch) · cos(yaw) · distance
+    eye.y = target.y + cos(pitch) · sin(yaw) · distance
+    eye.z = target.z + sin(pitch) · distance
+
+VIEW BASIS (the original "lamdanot" construction, see Camera.basis):
+  forward = normalize(target − eye)
+  up      = world-up projected onto the plane perpendicular to `forward`
+  left    = up × forward            (the original getXaxisUnitVector)
+  right   = −left                   (what the shaders use)
+
+PROJECTION (done in the vertex shader, shaders/chunks/projection.js): a vertex p is moved into camera
+space with three dot products and divided by its depth through gl_Position.w:
+
+    v = p − eye
+    clip.x = dot(v, right)   · focal / aspect
+    clip.y = dot(v, up)      · focal
+    clip.w = dot(v, forward)            (perspective divide → x/w, y/w)
+    focal  = 1 / tan(fov / 2)
+
+MODES
+  "orbit"       yaw/pitch/distance around `target`
+  "follow"      orbit whose target eases toward a followed object, with look-ahead along its velocity
+  "firstPerson" eye at `position`, looking along yaw/pitch
+Any mode can be shaken: `shakeOffset` moves eye and target together (driven by Juice in P4).</div>
+<div class="api-item" id="engine-Camera-js-Camera"><h3><span class="kind">class</span>Camera</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Loop-js">
+<h2>Loop</h2>
+<p class="path">public/engine/Loop.js</p>
+<div class="api-doc">Loop: fixed-timestep simulation + interpolated rendering on one requestAnimationFrame.
+
+  real time ──► accumulator += frameDelta · timeScale
+                 while accumulator ≥ step: update(step); accumulator −= step
+                 render(alpha = accumulator / step)
+
+The simulation always advances in exact 1/60 s steps, so physics and gameplay are deterministic and
+frame-rate independent. `alpha` lets the renderer blend between the last two simulated states.
+
+- `timeScale` slows or speeds simulated time (slow-mo); render still runs every frame.
+- `paused` stops simulation but keeps rendering (menus over a frozen scene).
+- When the tab is hidden the loop auto-pauses and, on return, discards the time spent away
+  (no huge catch-up burst).</div>
+<div class="api-item" id="engine-Loop-js-Loop"><h3><span class="kind">class</span>Loop</h3>
+<div class="api-members">
+<div><div class="sig">constructor(options)</div><div class="api-doc">@param {{ update: (dt: number) =&gt; void, render: (alpha: number, frameDelta: number) =&gt; void,
+          step?: number, maxStepsPerFrame?: number, autoPauseWhenHidden?: boolean,
+          now?: () =&gt; number, requestFrame?: (cb: FrameRequestCallback) =&gt; number,
+          cancelFrame?: (id: number) =&gt; void }} options
+       `now`, `requestFrame` and `cancelFrame` are injectable for tests.</div></div>
+<div><div class="sig">tick(timestamp)</div><div class="api-doc">One animation frame. Public so tests can drive it with fake timestamps.</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-config-js">
+<h2>config</h2>
+<p class="path">public/engine/config.js</p>
+<div class="api-doc">Central engine configuration. Every "magic number" the engine relies on lives here.</div>
+<div class="api-item" id="engine-config-js-ATTRIB"><h3><span class="kind">const</span>ATTRIB</h3>
+<div class="api-doc">Fixed vertex attribute locations, bound before linking every program.
+ Because every program agrees on these slots, one VAO works with any material.</div>
+</div>
+<div class="api-item" id="engine-config-js-ATTRIB-NAMES"><h3><span class="kind">const</span>ATTRIB_NAMES</h3>
+<div class="api-doc">Attribute names as they appear in GLSL, mapped to their fixed location.</div>
+</div>
+<div class="api-item" id="engine-config-js-QUALITY"><h3><span class="kind">const</span>QUALITY</h3>
+<div class="api-doc">Quality presets. P1 uses `dprCap` and `resolutionScale`; later phases add particles, post-FX, shadows.</div>
+</div>
+<div class="api-item" id="engine-config-js-LIGHTS"><h3><span class="kind">const</span>LIGHTS</h3>
+<div class="api-doc">Limits baked into the lighting and skinning shaders (uniform array sizes).</div>
+</div>
+<div class="api-item" id="engine-config-js-LOOP"><h3><span class="kind">const</span>LOOP</h3>
+</div>
+<div class="api-item" id="engine-config-js-CAMERA"><h3><span class="kind">const</span>CAMERA</h3>
+</div>
+<div class="api-item" id="engine-config-js-SKIN"><h3><span class="kind">const</span>SKIN</h3>
+</div>
+<div class="api-item" id="engine-config-js-RENDER"><h3><span class="kind">const</span>RENDER</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Geometry-js">
+<h2>Geometry</h2>
+<p class="path">public/engine/Geometry.js</p>
+<div class="api-doc">Vertex data + its GPU buffers.
+
+Attributes are typed arrays (positions and normals: 3 floats, uvs: 2, colors: 4). Indices are optional.
+Skinned geometry also carries joints and weights (4 floats each: which joints move a vertex, and how much).
+Buffers are created lazily on first use by a Renderer, per GL context, and uploaded once. Call
+`markDirty()` after editing arrays in place to re-upload.</div>
+<div class="api-item" id="engine-Geometry-js-Geometry"><h3><span class="kind">class</span>Geometry</h3>
+<div class="api-members">
+<div><div class="sig">constructor(data)</div><div class="api-doc">@param {{ positions: Float32Array, normals?: Float32Array, uvs?: Float32Array, colors?: Float32Array,
+          joints?: Float32Array, weights?: Float32Array, tangents?: Float32Array,
+          morphTargets?: Array&lt;{ positions: Float32Array, normals?: Float32Array | null }&gt;,
+          indices?: Uint16Array | Uint32Array, mode?: "triangles" | "lines" | "lineStrip" | "points",
+          dynamic?: boolean, name?: string }} data
+       dynamic: the arrays are rewritten often (particles, trails); uses DYNAMIC_DRAW and bufferSubData.</div></div>
+<div><div class="sig">computeBounds()</div><div class="api-doc">Box and sphere around the vertices. The Renderer uses the sphere to skip meshes outside the view.</div></div>
+<div><div class="sig">markDirty()</div><div class="api-doc">Re-upload all attribute data on next draw (after editing arrays in place). Bounds follow by themselves.</div></div>
+<div><div class="sig">freshBounds()</div><div class="api-doc">Bounds that match the current vertices (recomputed once after a markDirty()).</div></div>
+<div><div class="sig">computeTangents()</div><div class="api-doc">Tangents for normal mapping: for every vertex, the direction along the surface in which the texture's
+U grows, plus a sign saying which way V goes. A normal map stores its bumps relative to that frame.
+Computed per triangle from positions and UVs, summed per vertex, then made perpendicular to the normal.</div></div>
+<div><div class="sig">applyMorph(weights)</div><div class="api-doc">Blend the shape keys (morph targets) into the vertices: position = base + Σ weight · offset.
+Done on the CPU and re-uploaded, so it suits a face or a few props, not a crowd.
+@param {ArrayLike&lt;number&gt;} weights one per morph target</div></div>
+<div><div class="sig">bind(gl)</div><div class="api-doc">Create/refresh GPU buffers for a context and point the fixed attribute slots at them.
+Called by Mesh while its VAO is bound.
+@param {WebGLRenderingContext | WebGL2RenderingContext} gl</div></div>
+<div><div class="sig">static merge(parts, options = {})</div><div class="api-doc">Join several geometries into one, so a whole static scene is a single draw call (and a single shadow
+draw). Each part may carry a model matrix and a colour: the colour multiplies the part's own vertex
+colours (or becomes its colour if it has none; alpha defaults to 1).
+Parts must be triangle lists. Normals are transformed with the matrix (uniform scale assumed).
+@param {Array&lt;{ geometry: Geometry, matrix?: ArrayLike&lt;number&gt;, color?: ArrayLike&lt;number&gt; }&gt;} parts
+@param {{ name?: string, uvs?: boolean, skin?: boolean }} [options] skin: keep joints and weights</div></div>
+<div><div class="sig">dispose(gl)</div><div class="api-doc">@param {WebGLRenderingContext | WebGL2RenderingContext} gl</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Geometry-js-indexArray"><h3><span class="kind">function</span>indexArray(list, vertexCount)</h3>
+<div class="api-doc">Pick the smallest index type that fits.</div>
+</div>
+</section>
+<section class="api-module" id="engine-geometry-primitives-js">
+<h2>geometry/primitives</h2>
+<p class="path">public/engine/geometry/primitives.js</p>
+<div class="api-doc">Primitive shapes. World is Z-up, so "height" is along Z and planes lie in XY facing +Z.
+All return indexed triangle geometry with normals and UVs, except grid/lines (line lists).</div>
+<div class="api-item" id="engine-geometry-primitives-js-box"><h3><span class="kind">function</span>box(width = 1, depth = 1, height = 1)</h3>
+<div class="api-doc">Axis-aligned box centred on the origin. 24 vertices (flat normals per face).</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-sphere"><h3><span class="kind">function</span>sphere(radius = 0.5, widthSegments = 24, heightSegments = 16)</h3>
+<div class="api-doc">UV sphere.</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-plane"><h3><span class="kind">function</span>plane(width = 1, depth = 1, segX = 1, segY = 1)</h3>
+<div class="api-doc">Flat plane in XY facing +Z.</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-cylinder"><h3><span class="kind">function</span>cylinder(radiusTop = 0.5, radiusBottom = 0.5, height = 1, segments = 24, caps = true)</h3>
+<div class="api-doc">Cylinder / frustum along Z, base at z = -height/2. radiusTop = 0 makes a cone.
+Side normals account for the slope so cones shade correctly.</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-cone"><h3><span class="kind">function</span>cone(radius = 0.5, height = 1, segments = 24)</h3>
+<div class="api-doc">Cone along Z (apex at +height/2).</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-torus"><h3><span class="kind">function</span>torus(radius = 0.5, tube = 0.2, radialSegments = 16, tubularSegments = 48)</h3>
+<div class="api-doc">Torus in the XY plane: major radius R, tube radius r.</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-capsule"><h3><span class="kind">function</span>capsule(radius = 0.3, length = 1, capSegments = 8, radialSegments = 20)</h3>
+<div class="api-doc">Capsule along Z: a cylinder of `length` with hemispherical ends of `radius`.</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-grid"><h3><span class="kind">function</span>grid(size = 10, divisions = 10)</h3>
+<div class="api-doc">Square grid of lines in the XY plane (line list).</div>
+</div>
+<div class="api-item" id="engine-geometry-primitives-js-lines"><h3><span class="kind">function</span>lines(points, strip = true)</h3>
+<div class="api-doc">Line list from an array of [x, y, z] points; `strip: true` connects them in order.</div>
+</div>
+</section>
+<section class="api-module" id="engine-Mesh-js">
+<h2>Mesh</h2>
+<p class="path">public/engine/Mesh.js</p>
+<div class="api-doc">Mesh: geometry + material, with one vertex array object (VAO) per GL context.
+InstancedMesh: draws the same geometry many times in one draw call with per-instance matrix + colour.
+SkinnedMesh: a mesh deformed by a skeleton (see engine/Animation.js).</div>
+<div class="api-item" id="engine-Mesh-js-Mesh"><h3><span class="kind">class</span>Mesh</h3>
+<div class="api-members">
+<div><div class="sig">constructor(geometry, material)</div><div class="api-doc">@param {import("./Geometry.js").Geometry} geometry
+@param {import("./Material.js").Material} material</div></div>
+<div><div class="sig">bindVAO(gl)</div><div class="api-doc">Bind (creating if needed) the VAO for this context. VAOs record which buffers feed which attribute
+slots, so after the first frame drawing a mesh is just "bind VAO, draw".
+@param {WebGLRenderingContext | WebGL2RenderingContext} gl</div></div>
+<div><div class="sig">bindExtra(gl)</div><div class="api-doc">Hook for subclasses to add attributes to the VAO.</div></div>
+<div><div class="sig">beforeDraw(gl)</div><div class="api-doc">Hook for subclasses to update per-frame GPU data.</div></div>
+<div><div class="sig">constructor(geometry, material, capacity)</div><div class="api-doc">@param {import("./Geometry.js").Geometry} geometry
+@param {import("./Material.js").Material} material
+@param {number} capacity maximum number of instances (buffers are allocated once)</div></div>
+<div><div class="sig">setTransform(i, x, y, z, sx = 1, sy = sx, sz = sx, yaw = 0)</div><div class="api-doc">Fast path: translation + uniform/axis scale + rotation around Z (no allocation).
+@param {number} i instance index</div></div>
+<div><div class="sig">setMatrix(i, mat4)</div><div class="api-doc">Copy a full mat4 (e.g. from Transform.worldMatrix).</div></div>
+<div><div class="sig">markDirty(i)</div><div class="api-doc">Mark instance i (or the whole range) for upload.</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Mesh-js-SkinnedMesh"><h3><span class="kind">class</span>SkinnedMesh extends Mesh</h3>
+<div class="api-doc">SkinnedMesh: a mesh bent by a skeleton. The geometry needs `joints` and `weights`; the material must be
+one with a skinning variant (StandardMaterial). The skeleton's root sits at the entity's origin, so the
+entity places and turns the whole character and the Animator moves the limbs.
+
+  const animator = new Animator(skeleton, clips);
+  entity.mesh = new SkinnedMesh(geometry, material, animator);
+
+Up to SKIN.maxJoints joints, the skinning matrices are a uniform array. A bigger skeleton (most
+downloaded character rigs have 50 to 70 bones) sends them as one row of a float texture, four texels per
+joint, which the vertex shader reads back; that needs WebGL2 or the OES_texture_float extension.</div>
+<div class="api-members">
+<div><div class="sig">constructor(geometry, material, animator)</div><div class="api-doc">@param {import("./Geometry.js").Geometry} geometry
+@param {import("./Material.js").Material} material
+@param {import("./Animation.js").Animator} animator</div></div>
+<div><div class="sig">get jointMatrices()</div><div class="api-doc">the skinning matrices the shader reads (16 floats per joint, at least SKIN.maxJoints of them)</div></div>
+<div><div class="sig">bindJoints(gl, program)</div><div class="api-doc">Hand the skinning matrices to a program: as a uniform array, or through the joint texture.
+@param {WebGLRenderingContext | WebGL2RenderingContext} gl
+@param {import("./gl/ShaderProgram.js").ShaderProgram} program</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Mesh-js-InstancedMesh"><h3><span class="kind">class</span>InstancedMesh extends Mesh</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Material-js">
+<h2>Material</h2>
+<p class="path">public/engine/Material.js</p>
+<div class="api-doc">Material: which shader draws a mesh, with which parameters and GPU state.
+
+`BasicMaterial`: unlit or Lambert (sun + hemisphere), colour, opacity, emissive, vertex colours. Cheap.
+`StandardMaterial`: the full light system (sun with shadows, point lights, fog), textures, skinning.
+`PBRMaterial`: the same, lit from metallic and roughness (the model glTF files and most asset packs use).
+`ShaderMaterial`: your own GLSL. `GlowMaterial`: an additive halo.
+A material type plugs in by providing `shader`, `defines()` and `uniforms()`. A uniform value may be a
+Texture; the Renderer binds it to a free texture unit.</div>
+<div class="api-item" id="engine-Material-js-StandardMaterial"><h3><span class="kind">class</span>StandardMaterial extends Material</h3>
+<div class="api-doc">The engine's fully lit surface. Reads the Scene's sun, shadow map, point lights and fog.
+
+  new StandardMaterial({ color: [0.9, 0.5, 0.2] })
+  new StandardMaterial({ map: texture })            // textured (uses the mesh's UVs)
+  new StandardMaterial({ vertexColors: true })      // per-vertex colour; alpha above 1 glows by itself
+  new StandardMaterial({ palette: colours })        // a_color.r is an index into the palette
+
+Works on Mesh, InstancedMesh and SkinnedMesh; the Renderer picks the matching shader variant.</div>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {{ color?: number[], opacity?: number, emissive?: number[], map?: import("./Texture.js").Texture | null,
+          normalMap?: import("./Texture.js").Texture | null, normalScale?: number,
+          emissiveMap?: import("./Texture.js").Texture | null,
+          vertexColors?: boolean, palette?: Float32Array | number[] | null, lit?: boolean,
+          specular?: number, shininess?: number, rim?: number[] | null, rimPower?: number, alphaTest?: number,
+          transparent?: boolean, cull?: "back" | "front" | "none", blending?: "normal" | "additive",
+          depthWrite?: boolean, castShadow?: boolean }} [options]
+       palette: PALETTE_SIZE rgb colours as one flat array. A mesh can use its own table with
+       `mesh.uniforms = { u_palette }`, so many characters share one material.
+       normalMap: per-pixel surface direction (tangent space, the usual blue-ish image); the mesh
+       needs UVs, and tangents are computed for it if missing. normalScale: bump strength.
+       emissiveMap: multiplies `emissive` (which defaults to white when a map is given).</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Material-js-PBRMaterial"><h3><span class="kind">class</span>PBRMaterial extends StandardMaterial</h3>
+<div class="api-doc">A physically based surface: instead of "how strong and how tight is the highlight", say what the
+surface is made of.
+
+  new PBRMaterial({ color: [1, 0.77, 0.34], metallic: 1, roughness: 0.25 })     // polished gold
+  new PBRMaterial({ color: [0.8, 0.1, 0.1], metallic: 0, roughness: 0.5 })      // red plastic
+  new PBRMaterial({ map, normalMap, metallicRoughnessMap })                      // a textured asset
+
+metallic: 0 = plastic, wood, stone, skin; 1 = bare metal. Metals have no colour of their own, only
+tinted reflections. roughness: 0 = mirror, 1 = chalk. Rough surfaces spread the highlight wide and dim.
+Reflections of the surroundings come from the Scene's sky and ground colours; `envIntensity` scales them.
+Everything a StandardMaterial takes works here too (textures, vertex colours, palette, skinning,
+instancing, alpha test), except `specular` and `shininess`, which metallic and roughness replace.</div>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {ConstructorParameters&lt;typeof StandardMaterial&gt;[0] &amp; { metallic?: number, roughness?: number,
+          metallicRoughnessMap?: import("./Texture.js").Texture | null, envIntensity?: number }} [options]
+       metallicRoughnessMap: green = roughness, blue = metallic (the glTF layout); multiplies the two numbers</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Material-js-ShaderMaterial"><h3><span class="kind">class</span>ShaderMaterial extends Material</h3>
+<div class="api-doc">Custom GLSL. Include the projection chunk in the vertex shader and call projectLab():
+
+  import { projection } from "../shaders/chunks/projection.js";
+  new ShaderMaterial({ name: "wobble", vertex: projection + `...`, fragment: `...`, uniforms: { u_amount: 1 } });
+
+Engine-provided uniforms (set automatically when declared): u_model, u_normalMatrix, u_camPos, u_camRight,
+u_camUp, u_camForward, u_proj, u_time, u_viewport, u_sunDirection, u_sunColor, u_skyColor, u_groundColor,
+and everything the lighting chunk declares (shaders/chunks/lighting.js: point lights, fog, shadow map).
+`name` must be unique per shader source (it keys the program cache).</div>
+<div class="api-members">
+<div><div class="sig">constructor(options)</div><div class="api-doc">@param {{ name: string, vertex: string, fragment: string, uniforms?: Record&lt;string, any&gt;,
+          defines?: Record&lt;string, string | number | boolean&gt;, transparent?: boolean, depthTest?: boolean,
+          depthWrite?: boolean, cull?: "back" | "front" | "none", blending?: "normal" | "additive" }} options</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Material-js-GlowMaterial"><h3><span class="kind">class</span>GlowMaterial extends Material</h3>
+<div class="api-doc">Glow halo: an additive fresnel shell. Put it on a slightly larger copy of a mesh (or a sphere) to give
+planets, stars and pickups a soft atmosphere that bloom picks up.</div>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {{ color?: number[], intensity?: number, power?: number, inner?: boolean }} [options]
+ inner: glow toward the centre (a sun core) instead of the rim (an atmosphere)</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-Material-js-Material"><h3><span class="kind">class</span>Material</h3>
+</div>
+<div class="api-item" id="engine-Material-js-BasicMaterial"><h3><span class="kind">class</span>BasicMaterial extends Material</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Texture-js">
+<h2>Texture</h2>
+<p class="path">public/engine/Texture.js</p>
+<div class="api-doc">Texture: an image on the GPU. The source can be an &lt;img&gt;, a &lt;canvas&gt;, an ImageBitmap, or raw RGBA bytes.
+Like Geometry, nothing is uploaded until a Renderer first needs it, and the GPU object is kept per context.
+
+  const wood = await Texture.load("assets/wood.png");
+  new StandardMaterial({ map: wood });
+
+  const sign = new Texture({ source: canvas });      // draw on a 2D canvas, use it as a texture
+  sign.update();                                     // after drawing on the canvas again
+
+UV origin: (0, 0) is the first row of the source, which for an image is its top-left. That is the glTF
+convention, so loaded models need no flipping. Pass `flipY: true` for bottom-left-origin UVs.</div>
+<div class="api-item" id="engine-Texture-js-Texture"><h3><span class="kind">class</span>Texture</h3>
+</div>
+</section>
+<section class="api-module" id="engine-ShadowMap-js">
+<h2>ShadowMap</h2>
+<p class="path">public/engine/ShadowMap.js</p>
+<div class="api-doc">ShadowMap: shadows cast by the Scene's sun.
+
+  scene.shadow = new ShadowMap({ center: [10, 0, 0], extent: [24, 14], size: 2048 });   // one fixed box
+  scene.shadow = new ShadowMap({ cascades: 3, distance: 150 });                         // follows the camera
+
+Before the main pass the Renderer draws every opaque mesh once more from the sun's point of view into a
+depth texture: for each texel, how far the nearest surface is from the sun. In the main pass a surface
+compares its own distance to the sun against that texel (shaders/chunks/lighting.js, labShadow). If
+something was nearer, the surface is in shadow.
+
+The sun is far away, so its rays are parallel and its "camera" has no perspective: a box.
+
+ONE FIXED BOX (`cascades: 0`, the default). The box is `extent` wide and tall, `depth` deep, centred on
+`center`. Only things inside it cast or receive shadows, so keep it as small as the play area allows:
+the same texture spread over less ground gives sharper shadows. Right for a board, a room, a street.
+
+CASCADES (`cascades: 1..3`). For a world too large for one box. The part of the camera's view nearer
+than `distance` is cut into slices by depth, close ones thin and far ones thick. Each slice gets its own
+box, fitted around it every frame, and its own tile of the texture (the tiles sit side by side, so the
+texture is `size × cascades` wide). Near the camera a texel covers centimetres; far away, where a pixel
+covers more ground anyway, it covers metres. Two details keep it steady:
+  - each box is fitted to a sphere around its slice, so its size doesn't change as the camera turns;
+  - its centre moves in whole-texel steps, so shadow edges don't crawl as the camera moves.
+
+Static casters (optional, `cache: true`, fixed box only). Most of a scene never moves (buildings,
+terrain, furniture). Mark those entities `entity.staticShadow = true` and their depth is drawn once into
+a second texture and kept; each frame that texture is copied into the shadow map and only the moving
+casters are drawn on top. The kept copy is redrawn by itself when the sun, the box, or a static
+entity's mesh, geometry or transform changes. If you edit a static mesh in a way that can't be seen from
+outside (instance matrices, vertices in place without markDirty), call `invalidate()`.
+This needs WebGL2 (the copy writes gl_FragDepth); on WebGL1 everything is simply drawn every frame.
+It is off by default because it is not always a win: the copy touches every texel of the shadow map,
+and drawing depth-only triangles is cheap. Measured on NIGHT MARKET (Intel UHD, 2048² map, a static
+street of 150,000 triangles): drawing the street cost about 0.5 ms a frame, copying it about 0.9 ms.
+Turn it on for scenes whose static casters are much heavier than that, and time both ways.
+
+Casters whose bounding sphere lies outside a box are skipped for that box.
+
+Needs a depth texture: built into WebGL2, an extension on WebGL1. Without one, `supported` is false and
+the scene renders with no shadows.</div>
+<div class="api-item" id="engine-ShadowMap-js-ShadowMap"><h3><span class="kind">class</span>ShadowMap</h3>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {{ size?: number, center?: number[], extent?: number[], depth?: number, strength?: number,
+          bias?: number, normalBias?: number, enabled?: boolean, cache?: boolean,
+          cascades?: number, distance?: number, lambda?: number }} [options]
+       size: texels along one side of the box (of each cascade's tile)
+       extent: half-width and half-height of the fixed box, in world units, as the sun sees it
+       depth: how far the box reaches along the sun's rays (casters above the view count too)
+       strength: 0..1, how much sunlight a shadow removes
+       cache: keep the depth of `staticShadow` entities between frames (default false; see above)
+       cascades: 0 = one fixed box; 1..3 = that many boxes fitted to the camera's view
+       distance: how far from the camera cascaded shadows reach, in world units
+       lambda: where the cuts fall, 0 = evenly spaced, 1 = each slice a fixed multiple of the one before</div></div>
+<div><div class="sig">invalidate()</div><div class="api-doc">Throw away the kept depth of the static casters; it is redrawn on the next frame.</div></div>
+<div><div class="sig">update(sunDirection, camera, aspect = 1)</div><div class="api-doc">Recompute the sun's matrices. Called by the Renderer every frame.
+@param {ArrayLike&lt;number&gt;} sunDirection
+@param {import("./Camera.js").Camera} [camera] needed for cascades
+@param {number} [aspect]</div></div>
+<div><div class="sig">texture(gl)</div><div class="api-doc">The depth texture for this context (null when unsupported).</div></div>
+<div><div class="sig">render(renderer, casters)</div><div class="api-doc">Draw the casters into the depth texture.
+@param {import("./Renderer.js").Renderer} renderer
+@param {Array&lt;import("./Entity.js").Entity&gt;} casters opaque entities, already with world matrices</div></div>
+<div><div class="sig">dispose(gl)</div><div class="api-doc">@param {WebGLRenderingContext | WebGL2RenderingContext} gl</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-PostFX-js">
+<h2>PostFX</h2>
+<p class="path">public/engine/PostFX.js</p>
+<div class="api-doc">PostFX: renders the scene into an HDR target, then applies bloom and a final composite to the screen.
+
+  scene ──► [HDR target + depth texture]
+              ├─► ambient occlusion ½ (from depth) ─► blur ─► ao      (optional, settings.ao)
+              ├─► bright pass ½ ─► blur ─► mip0 ─► ¼ ─► blur ─► mip1 ─► ⅛ ─► blur ─► mip2
+              └──────────────── composite (+ mips, exposure, tone map, grading, vignette, grain, AA) ─► screen
+
+Bloom is "selective" by brightness: only values above `threshold` bleed. With an HDR target, emissive
+colours brighter than 1.0 (e.g. emissive × 3) glow while ordinary lit surfaces don't.
+
+  renderer.postfx = new PostFX(renderer, { bloom: { intensity: 1.2 } });
+  renderer.postfx.settings.vignette = 0.4;   // tweak live</div>
+<div class="api-item" id="engine-PostFX-js-POSTFX-DEFAULTS"><h3><span class="kind">const</span>POSTFX_DEFAULTS</h3>
+</div>
+<div class="api-item" id="engine-PostFX-js-PostFX"><h3><span class="kind">class</span>PostFX</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Sky-js">
+<h2>Sky</h2>
+<p class="path">public/engine/Sky.js</p>
+<div class="api-doc">Sky: a full-screen background drawn before the scene (depth test and writes off).
+The default is the procedural space sky; pass another { vertex, fragment } for other skies.
+
+  scene.sky = new Sky({ uniforms: { u_nebulaA: [0.3, 0.1, 0.5] } });</div>
+<div class="api-item" id="engine-Sky-js-SPACE-DEFAULTS"><h3><span class="kind">const</span>SPACE_DEFAULTS</h3>
+</div>
+<div class="api-item" id="engine-Sky-js-Sky"><h3><span class="kind">class</span>Sky</h3>
+</div>
+</section>
+<section class="api-module" id="engine-ParticleSystem-js">
+<h2>ParticleSystem</h2>
+<p class="path">public/engine/ParticleSystem.js</p>
+<div class="api-doc">ParticleSystem: pooled point-sprite particles, simulated on the CPU in world space.
+
+Data is struct-of-arrays in typed arrays allocated once (`capacity`). Dead particles are removed by
+swapping the last live one into their slot, so the live particles are always the first `alive` entries
+and the GPU draws exactly that range. Emitting and updating allocate nothing.
+
+  const sparks = new ParticleSystem({ capacity: 2000, gravity: [0, 0, -4] });
+  scene.add(sparks);
+  sparks.emit(40, { position: [x, y, z], speed: 6, life: [0.4, 0.9], size: [0.3, 0], color: [1, .8, .3, 1], colorEnd: [1, .2, 0, 0] });</div>
+<div class="api-item" id="engine-ParticleSystem-js-ParticleSystem"><h3><span class="kind">class</span>ParticleSystem extends Entity</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Trail-js">
+<h2>Trail</h2>
+<p class="path">public/engine/Trail.js</p>
+<div class="api-doc">Trail: a fading line through the last N positions of something that moves (comets, projectiles, cursors).
+Additive and unlit, so with bloom it reads as a streak of light.
+
+  const trail = scene.add(new Trail({ length: 120, color: [0.5, 0.9, 1.5] }));
+  trail.push(x, y, z);   // every step</div>
+<div class="api-item" id="engine-Trail-js-Trail"><h3><span class="kind">class</span>Trail extends Entity</h3>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {{ length?: number, color?: number[], name?: string }} [options] color rgb may exceed 1 (HDR)</div></div>
+<div><div class="sig">push(x, y, z)</div><div class="api-doc">Append a point (oldest points fall off the end).</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="shaders-chunks-projection-js">
+<h2>chunks/projection</h2>
+<p class="path">public/shaders/chunks/projection.js</p>
+<div class="api-doc">GLSL chunk: projection_library's dot-product projection.
+Include in any vertex shader and call projectLab(worldPosition).
+Uniforms are filled by Camera.writeUniforms().</div>
+<div class="api-item" id="shaders-chunks-projection-js-projection"><h3><span class="kind">const</span>projection</h3>
+</div>
+</section>
+<section class="api-module" id="shaders-chunks-lighting-js">
+<h2>chunks/lighting</h2>
+<p class="path">public/shaders/chunks/lighting.js</p>
+<div class="api-doc">GLSL chunk: the engine's lighting, for fragment shaders. Include it in any ShaderMaterial and the
+Renderer fills every uniform from the Scene:
+
+  vec3 light = labLight(world, normal);          // ambient + sun (with shadow) + point lights
+  vec3 color = labFog(albedo * light, world);    // distance fog
+
+The parts are also available on their own: labAmbient, labSun, labShadow, labPoints.
+For a metallic / roughness surface use labLightPBR instead (it returns the finished colour):
+
+  vec3 color = labFog(labLightPBR(world, normal, albedo, metallic, roughness, 1.0), world);
+
+Shadows: the sun's view of the scene is rendered to a depth texture first (engine/ShadowMap). A point is
+in shadow if something nearer to the sun was drawn at the same place in that texture. Nine neighbouring
+texels are compared and averaged (percentage-closer filtering), which turns the hard stair-stepped edge
+into a soft one. The lookup point is pushed along the surface normal so a surface doesn't shadow itself.
+
+Cascades: one box around a whole level spreads the texture thin. With cascades the camera's view is cut
+into up to three slices by distance; each slice gets its own box and its own tile of the texture, so the
+ground at your feet gets as many texels as the hills far away. The fragment picks its tile by how far it
+is from the camera along the view direction.
+
+Physically based shading (labLightPBR): a surface is described by how metallic and how rough it is.
+The highlight is the GGX microfacet model (Walter et al. 2007) with the height-correlated Smith
+visibility term and Schlick's Fresnel approximation. Reflections of the surroundings use the scene's
+sky and ground colours as a two-tone environment, weighted by the analytic environment-BRDF fit from
+Brian Karis, "Physically Based Shading on Mobile" (2014). Published formulas; no code copied.</div>
+<div class="api-item" id="shaders-chunks-lighting-js-lighting"><h3><span class="kind">const</span>lighting</h3>
+</div>
+</section>
+<section class="api-module" id="engine-loaders-GLTF-js">
+<h2>loaders/GLTF</h2>
+<p class="path">public/engine/loaders/GLTF.js</p>
+<div class="api-doc">glTF 2.0 loader: reads .glb (one binary file) and .gltf (JSON + buffers), the format Blender and most
+asset packs export.
+
+  const asset = await loadGLTF("assets/models/vendor.glb");
+  const character = asset.instantiate();        // an Entity tree; call it again for another copy
+  scene.add(character);
+  character.animator.play("walk");              // set when the file has a skin
+  game.onRender((dt) =&gt; character.animator.update(dt));
+
+Or take the parts and build things yourself: `asset.meshes`, `asset.skeleton`, `asset.clips`.
+
+What is read: meshes (positions, normals, tangents, UVs, vertex colours, joints, weights, indices, morph
+targets), sparse accessors, materials (base colour and texture, normal map, emissive and its texture,
+metallic, roughness and their texture, alpha mode, double-sided), textures, the node tree, one skin (its
+joints become a Skeleton of up to SKIN.maxTextureJoints bones), animations of that skin's joints.
+What is not: cameras, lights, more than one skin, animation of nodes that aren't joints or of morph
+weights, compression extensions (Draco, meshopt).
+
+Materials: by default each becomes a StandardMaterial (base colour, normal map, emissive) so models keep
+the engine's flat, readable look. Pass `{ pbr: true }` for a PBRMaterial that also uses the file's
+metallic and roughness.
+
+Morph targets (shape keys) arrive as `geometry.morphTargets`; blend them with `geometry.applyMorph(weights)`.
+
+Coordinates: glTF is Y-up and this engine is Z-up. `instantiate()` returns a root that is already turned
+upright, so the model stands on the XY plane. If you build from parts, use `asset.upright` (a quaternion).</div>
+<div class="api-item" id="engine-loaders-GLTF-js-loadGLTF"><h3><span class="kind">function</span>loadGLTF(url, options = {})</h3>
+<div class="api-doc">@param {string} url
+@param {{ pbr?: boolean, material?: (info: { name: string, color: number[], opacity: number, map: Texture | null,
+          normalMap: Texture | null, normalScale: number, emissive: number[], emissiveMap: Texture | null,
+          metallic: number, roughness: number, metallicRoughnessMap: Texture | null,
+          transparent: boolean, alphaTest: number, doubleSided: boolean, vertexColors: boolean }) =&gt; import("../Material.js").Material }} [options]
+       pbr: make PBRMaterials (metallic / roughness) instead of StandardMaterials
+       material: build your own material for each glTF material
+@returns {Promise&lt;GLTFAsset&gt;}</div>
+</div>
+<div class="api-item" id="engine-loaders-GLTF-js-parseGLTF"><h3><span class="kind">function</span>parseGLTF(arrayBuffer, options = {})</h3>
+<div class="api-doc">Parse glTF from memory (an ArrayBuffer holding a .glb, or the bytes of a .gltf JSON file).</div>
+</div>
+<div class="api-item" id="engine-loaders-GLTF-js-GLTFAsset"><h3><span class="kind">class</span>GLTFAsset</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Animation-js">
+<h2>Animation</h2>
+<p class="path">public/engine/Animation.js</p>
+<div class="api-doc">Skeletal animation: Skeleton (the bones), AnimationClip (keyframes), Animator (one character's playback).
+
+A skeleton is a small tree of joints. Each joint has a pose relative to its parent: translation,
+rotation (a quaternion) and scale. A clip stores, per joint, how those change over time. Every frame the
+Animator:
+  1. samples the clip at the current time into a local pose (blending two clips while cross-fading);
+  2. walks the tree from the root, multiplying each joint's local matrix onto its parent's, to get where
+     each joint is in model space;
+  3. multiplies by the joint's inverse bind matrix (where the joint was when the mesh was modelled),
+     giving the matrix that moves a vertex from its modelled position to its animated one.
+Those are the `u_joints` matrices the skinning shader blends per vertex.
+
+Skeletons and clips are shared; each character has its own Animator, so a crowd costs one small pose
+buffer each, not a copy of the animation data. Joints are plain typed arrays rather than scene Entities
+for the same reason.
+
+  const animator = new Animator(asset.skeleton, asset.clips);
+  animator.play("walk");
+  entity.mesh = new SkinnedMesh(geometry, material, animator);
+  // each rendered frame: animator.update(frameDelta)</div>
+<div class="api-item" id="engine-Animation-js-POSE-STRIDE"><h3><span class="kind">const</span>POSE_STRIDE</h3>
+<div class="api-doc">floats per joint in a pose: tx ty tz, qx qy qz qw, sx sy sz</div>
+</div>
+<div class="api-item" id="engine-Animation-js-Skeleton"><h3><span class="kind">class</span>Skeleton</h3>
+</div>
+<div class="api-item" id="engine-Animation-js-PATH"><h3><span class="kind">const</span>PATH</h3>
+</div>
+<div class="api-item" id="engine-Animation-js-AnimationClip"><h3><span class="kind">class</span>AnimationClip</h3>
+</div>
+<div class="api-item" id="engine-Animation-js-Animator"><h3><span class="kind">class</span>Animator</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Input-js">
+<h2>Input</h2>
+<p class="path">public/engine/Input.js</p>
+<div class="api-doc">Input: keyboard, mouse, touch, pointer lock, gamepads and on-screen controls behind named actions.
+
+  input.bind("jump", ["Space", "KeyW", "GamepadA"]);
+  input.bindAxis("steer", { negative: ["KeyA", "ArrowLeft"], positive: ["KeyD", "ArrowRight"], gamepad: "LeftX" });
+  // inside a fixed update:
+  if (input.wasPressed("jump")) player.jump();
+  player.x += input.axis("steer") * speed * dt;
+
+Edge semantics with a fixed-step loop: a press that happens between two steps is reported by
+wasPressed() in exactly ONE step, even if the key was already released, so short taps are never lost.
+The owner calls `beginStep()` before and `endStep()` after each fixed update (Game does this).
+
+The engine binds nothing by default; every key a game uses is declared by that game.</div>
+<div class="api-item" id="engine-Input-js-GAMEPAD-BUTTONS"><h3><span class="kind">const</span>GAMEPAD_BUTTONS</h3>
+<div class="api-doc">Standard-mapping gamepad button names → button index.</div>
+</div>
+<div class="api-item" id="engine-Input-js-GAMEPAD-AXES"><h3><span class="kind">const</span>GAMEPAD_AXES</h3>
+<div class="api-doc">Standard-mapping gamepad axis names → axis index.</div>
+</div>
+<div class="api-item" id="engine-Input-js-Input"><h3><span class="kind">class</span>Input</h3>
+</div>
+</section>
+<section class="api-module" id="engine-TouchControls-js">
+<h2>TouchControls</h2>
+<p class="path">public/engine/TouchControls.js</p>
+<div class="api-doc">TouchControls: an on-screen joystick and buttons for phones and tablets, feeding the same Input actions
+and axes the keyboard and gamepad do. The game code doesn't change.
+
+  input.bindAxis("moveX", { negative: ["KeyA"], positive: ["KeyD"], gamepad: "LeftX" });
+  input.bindAxis("moveY", { negative: ["KeyS"], positive: ["KeyW"] });
+  input.bind("jump", ["Space", "TouchA"]);
+
+  const touch = new TouchControls(game.input);
+  touch.joystick({ x: "moveX", y: "moveY" });           // bottom left; up on the stick is +1 on y
+  touch.button({ code: "TouchA", label: "Jump" });       // bottom right
+
+By default the controls appear only on devices whose main pointer is a finger (`visible: "auto"`).
+They are plain DOM elements over the page, so they stay sharp at any resolution and cost the renderer
+nothing. The joystick floats: it re-centres under the thumb wherever the thumb lands in its half of
+the screen, so nobody has to look down to find it.</div>
+<div class="api-item" id="engine-TouchControls-js-TouchControls"><h3><span class="kind">class</span>TouchControls</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Collision-js">
+<h2>Collision</h2>
+<p class="path">public/engine/Collision.js</p>
+<div class="api-doc">Collision: ray casts and overlap tests. Plain functions over plain arrays, no state.
+
+  // what is under the mouse?
+  const ray = camera.screenRay(input.pointer.x, input.pointer.y, canvas.clientWidth, canvas.clientHeight);
+  const hit = raycast(scene.root, ray)[0];           // nearest first; hit.entity, hit.distance, hit.point
+
+  // keep a player (a circle on the ground) out of the walls
+  slideCircle(player.position, 0.4, wallBoxes);
+
+Every ray function returns the distance along the ray to the hit, or -1 for a miss. `direction` should
+be normalized so that distance is in world units. Boxes are axis-aligned: a `min` and a `max` corner.</div>
+<div class="api-item" id="engine-Collision-js-raySphere"><h3><span class="kind">function</span>raySphere(origin, direction, center, radius)</h3>
+<div class="api-doc">Distance along the ray to a sphere, or -1. A ray starting inside hits at 0.</div>
+</div>
+<div class="api-item" id="engine-Collision-js-rayAABB"><h3><span class="kind">function</span>rayAABB(origin, direction, min, max)</h3>
+<div class="api-doc">Distance along the ray to an axis-aligned box, or -1 (the "slab" method: clip the ray against each pair of faces).</div>
+</div>
+<div class="api-item" id="engine-Collision-js-rayPlane"><h3><span class="kind">function</span>rayPlane(origin, direction, point, normal)</h3>
+<div class="api-doc">Distance along the ray to a plane through `point` with normal `normal`, or -1 (parallel, or behind the origin).</div>
+</div>
+<div class="api-item" id="engine-Collision-js-rayTriangle"><h3><span class="kind">function</span>rayTriangle(origin, direction, a, b, c, ao = 0, bo = 0, co = 0)</h3>
+<div class="api-doc">Distance along the ray to a triangle, or -1 (Möller and Trumbore, 1997: solve for the hit point as a
+mix of the triangle's corners and reject it if any share is negative).</div>
+</div>
+<div class="api-item" id="engine-Collision-js-sphereAABB"><h3><span class="kind">function</span>sphereAABB(center, radius, min, max, out = { x: 0, y: 0, z: 0, depth: 0 })</h3>
+<div class="api-doc">Does a sphere touch a box? If so, returns how to move the sphere out: a unit direction and a depth.
+@returns {{ x: number, y: number, z: number, depth: number } | null}</div>
+</div>
+<div class="api-item" id="engine-Collision-js-slideCircle"><h3><span class="kind">function</span>slideCircle(position, radius, boxes)</h3>
+<div class="api-doc">Push a circle on the ground (XY) out of a list of boxes, in place, so it slides along walls instead of
+stopping dead. Boxes are `{ min, max }`; only their X and Y are used. Returns true if it touched any.
+@param {{ 0: number, 1: number }} position edited in place
+@param {number} radius
+@param {Array&lt;{ min: ArrayLike&lt;number&gt;, max: ArrayLike&lt;number&gt; }&gt;} boxes</div>
+</div>
+<div class="api-item" id="engine-Collision-js-raycast"><h3><span class="kind">function</span>raycast(root, ray, options = {})</h3>
+<div class="api-doc">Cast a ray through an entity tree. Each mesh is tested by its bounding sphere first, then triangle by
+triangle (set `precise: false` to stop at the sphere). Instanced and skinned meshes are skipped: test
+those against your own shapes.
+Call after the scene has rendered once (it uses the entities' world matrices).
+@param {import("./Entity.js").Entity} root for a Scene, pass `scene.root` (or use `scene.raycast`)
+@param {Ray} ray
+@param {{ precise?: boolean, maxDistance?: number, filter?: (e: import("./Entity.js").Entity) =&gt; boolean }} [options]
+@returns {Array&lt;{ entity: import("./Entity.js").Entity, distance: number, point: number[] }&gt;} nearest first</div>
+</div>
+<div class="api-item" id="engine-Collision-js-sphereSphere"><h3><span class="kind">function</span>sphereSphere(centerA, radiusA, centerB, radiusB)</h3>
+</div>
+<div class="api-item" id="engine-Collision-js-aabbAABB"><h3><span class="kind">function</span>aabbAABB(minA, maxA, minB, maxB)</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Tween-js">
+<h2>Tween</h2>
+<p class="path">public/engine/Tween.js</p>
+<div class="api-doc">Tween: animate numeric properties over time with easing.
+
+  tweens.to(camera, { distance: 30, pitch: 1.1 }, { duration: 1.2, ease: Ease.inOutCubic });
+  // each frame: tweens.update(frameDelta)
+
+Easing formulas are the standard Robert Penner equations (published curves, reimplemented here).</div>
+<div class="api-item" id="engine-Tween-js-Ease"><h3><span class="kind">const</span>Ease</h3>
+</div>
+<div class="api-item" id="engine-Tween-js-Tweens"><h3><span class="kind">class</span>Tweens</h3>
+</div>
+</section>
+<section class="api-module" id="engine-Juice-js">
+<h2>Juice</h2>
+<p class="path">public/engine/Juice.js</p>
+<div class="api-doc">Juice: game-feel effects that respect reduced motion.
+
+Camera shake is trauma-based (Squirrel Eiserloh, "Juicing Your Cameras With Math", GDC 2016 — an idea,
+reimplemented): events add trauma (0..1); shake strength is trauma², so small hits are subtle and big ones
+heavy; trauma decays linearly. Motion comes from smooth layered sines, not random jitter, so it never
+looks like noise on a broken screen.
+
+  juice.shake(0.6);          // on impact
+  juice.update(dt);          // every frame, writes camera.shakeOffset</div>
+<div class="api-item" id="engine-Juice-js-Juice"><h3><span class="kind">class</span>Juice</h3>
+<div class="api-members">
+<div><div class="sig">constructor(options = {})</div><div class="api-doc">@param {{ camera?: import("./Camera.js").Camera, maxOffset?: number, decay?: number, reducedMotion?: boolean }} [options]</div></div>
+<div><div class="sig">shake(amount)</div><div class="api-doc">Add trauma (clamped to 1).</div></div>
+<div><div class="sig">freeze(ms)</div><div class="api-doc">Freeze gameplay for a few milliseconds on a heavy impact.</div></div>
+<div><div class="sig">update(dt)</div><div class="api-doc">@param {number} dt real seconds</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-Audio-js">
+<h2>Audio</h2>
+<p class="path">public/engine/Audio.js</p>
+<div class="api-doc">Audio: procedural sound effects (ZzFX, MIT) + an ambient drone, behind our own mixer.
+
+Nothing is created until `unlock()` runs inside a user gesture (browsers block audio before that, and
+creating an AudioContext early prints a console warning). ZzFX is imported lazily at that moment and only
+its sample generator is used; playback goes through our graph:
+
+  source ─► panner ─► channel gain (sfx | music) ─► master gain ─► speakers
+
+  audio.define("pop", [1.2, .05, 520, .01, .02, .1, , 1.8]);   // ZzFX parameters
+  button.onclick = async () =&gt; { await audio.unlock(); audio.play("pop", { pitch: 1.1 }); };
+
+ZzFX by Frank Force, MIT: https://github.com/KilledByAPixel/ZzFX (vendored at vendor/zzfx@1.3.2)</div>
+<div class="api-item" id="engine-Audio-js-Audio"><h3><span class="kind">class</span>Audio</h3>
+</div>
+</section>
+<section class="api-module" id="engine-DebugOverlay-js">
+<h2>DebugOverlay</h2>
+<p class="path">public/engine/DebugOverlay.js</p>
+<div class="api-doc">DebugOverlay: a small performance panel for a Game. Frame rate, frame time, draw calls, what was culled,
+triangles, resolution, and buttons to switch the quality preset while the game runs.
+
+  const debug = new DebugOverlay(game);          // hidden; press ` (the key under Esc) to show it
+  new DebugOverlay(game, { visible: true, corner: "top-right" });
+
+The numbers come from `renderer.stats` and the Loop. The text is rewritten four times a second, not
+every frame, so the panel itself doesn't show up in the timings it reports.</div>
+<div class="api-item" id="engine-DebugOverlay-js-DebugOverlay"><h3><span class="kind">class</span>DebugOverlay</h3>
+<div class="api-members">
+<div><div class="sig">constructor(game, options = {})</div><div class="api-doc">@param {import("./Game.js").Game} game
+@param {{ visible?: boolean, key?: string | null, corner?: "top-left" | "top-right" | "bottom-left" | "bottom-right",
+          parent?: HTMLElement }} [options] key: KeyboardEvent.code that toggles the panel (null for none)</div></div>
+<div><div class="sig">update(frameDelta)</div><div class="api-doc">Called every rendered frame by the Game.</div></div>
+</div>
+</div>
+</section>
+<section class="api-module" id="engine-gl-GLContext-js">
+<h2>gl/GLContext</h2>
+<p class="path">public/engine/gl/GLContext.js</p>
+<div class="api-doc">WebGL context creation: WebGL2 first, WebGL1 as a fallback.
+
+The engine writes its shaders in GLSL ES 1.00, which both WebGL1 and WebGL2 accept, and calls the
+WebGL2 names for vertex array objects and instancing. On WebGL1 those names are patched onto the context
+from the OES_vertex_array_object and ANGLE_instanced_arrays extensions, so the rest of the engine never
+branches on the version.</div>
+<div class="api-item" id="engine-gl-GLContext-js-createContext"><h3><span class="kind">function</span>createContext(canvas, options = {})</h3>
+<div class="api-doc">@param {HTMLCanvasElement} canvas
+@param {{ preferWebGL2?: boolean, antialias?: boolean, alpha?: boolean, preserveDrawingBuffer?: boolean }} [options]
+@returns {GLContextResult | null} null when WebGL is not available at all</div>
+</div>
+<div class="api-item" id="engine-gl-GLContext-js-showWebGLFailure"><h3><span class="kind">function</span>showWebGLFailure(container, detail = "")</h3>
+<div class="api-doc">Replace (or fill) a container with a readable "WebGL unavailable" panel. Never leaves a blank screen.
+@param {HTMLElement} container
+@param {string} [detail]</div>
+</div>
+</section>
+<section class="api-module" id="engine-gl-ShaderProgram-js">
+<h2>gl/ShaderProgram</h2>
+<p class="path">public/engine/gl/ShaderProgram.js</p>
+<div class="api-doc">A linked GLSL program with cached uniform locations and typed setters.
+
+- Attribute locations are fixed engine-wide (config.ATTRIB) and bound before linking, so any VAO
+  works with any program.
+- Uniform locations are read once after linking (never per frame).
+- `#define`s are injected as a header, so one source can produce variants (INSTANCED, VERTEX_COLORS...).
+- Compile/link failures throw a ShaderError with the stage, parsed line numbers and the source.</div>
+<div class="api-item" id="engine-gl-ShaderProgram-js-parseShaderLog"><h3><span class="kind">function</span>parseShaderLog(log)</h3>
+<div class="api-doc">Parse a driver info log into line/message pairs. Handles the common formats:
+  "ERROR: 0:12: 'foo' : undeclared identifier"   (ANGLE / most browsers)
+  "0(12) : error C0000: ..."                       (some desktop drivers)
+@param {string} log
+@returns {ShaderLogEntry[]}</div>
+</div>
+<div class="api-item" id="engine-gl-ShaderProgram-js-ShaderError"><h3><span class="kind">class</span>ShaderError extends Error</h3>
+<div class="api-doc">Error thrown when a shader fails to compile or link. Carries everything a debug panel needs.</div>
+<div class="api-members">
+<div><div class="sig">constructor(stage, log, source, name = "program")</div><div class="api-doc">@param {"vertex" | "fragment" | "link"} stage
+@param {string} log raw driver log
+@param {string} source the full source that was compiled (with injected header)
+@param {string} [name] program name</div></div>
+<div><div class="sig">constructor(gl, vertexSource, fragmentSource, options = {})</div><div class="api-doc">@param {WebGLRenderingContext | WebGL2RenderingContext} gl
+@param {string} vertexSource GLSL ES 1.00 source (no #version line)
+@param {string} fragmentSource
+@param {{ name?: string, defines?: Record&lt;string, string | number | boolean&gt; }} [options]</div></div>
+<div><div class="sig">static defineHeader(defines)</div><div class="api-doc">@param {Record&lt;string, string | number | boolean&gt;} defines</div></div>
+<div><div class="sig">has(name)</div><div class="api-doc">Does the program use this uniform? (unused uniforms are optimised away by the driver)</div></div>
+<div><div class="sig">set(name, value)</div><div class="api-doc">Set one uniform. Unknown / optimised-away names are ignored, so materials can set
+everything they own without knowing which variant is bound.
+@param {string} name
+@param {number | boolean | ArrayLike&lt;number&gt;} value</div></div>
+<div><div class="sig">setAll(values)</div><div class="api-doc">@param {Record&lt;string, any&gt;} values</div></div>
+</div>
+</div>
+<div class="api-item" id="engine-gl-ShaderProgram-js-ShaderProgram"><h3><span class="kind">class</span>ShaderProgram</h3>
+</div>
+</section>
+<section class="api-module" id="engine-gl-RenderTarget-js">
+<h2>gl/RenderTarget</h2>
+<p class="path">public/engine/gl/RenderTarget.js</p>
+<div class="api-doc">RenderTarget: an offscreen framebuffer with a colour texture (and optional depth).
+
+`float: true` asks for an HDR target (half-float RGBA16F) so bright values above 1.0 survive until bloom
+and tone mapping. If the GPU can't render to half floats it silently falls back to RGBA8 (LDR);
+`isFloat` tells you which you got.</div>
+<div class="api-item" id="engine-gl-RenderTarget-js-RenderTarget"><h3><span class="kind">class</span>RenderTarget</h3>
+</div>
+</section>
+        </article>
+    </div>
+    <script type="module" src="../site/site.js"></script>
+</body>
+</html>
