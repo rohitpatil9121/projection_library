@@ -35,7 +35,8 @@ export async function run(el) {
     el.innerHTML = `<h2 class="${fail ? "bad" : "good"}">${pass} passed · ${fail} failed</h2>` + rows.map((r) =>
         `<div class="row ${r.ok ? "ok" : "ko"}"><span>${r.ok ? "✓" : "✗"}</span><span>${escape(r.name)}</span><span class="ms">${r.ms.toFixed(1)} ms</span>` +
         (r.ok ? "" : `<pre>${escape(r.error && (r.error.stack || r.error.message) || String(r.error))}</pre>`) + `</div>`).join("");
-    const result = { pass, fail, total: tests.length, failures: rows.filter((r) => !r.ok).map((r) => `${r.name}: ${r.error && r.error.message}`) };
+    const result = { pass, fail, total: tests.length, failures: rows.filter((r) => !r.ok).map((r) => `${r.name}: ${r.error && r.error.message}`),
+        rows: rows.map((r) => `${r.ok ? "ok  " : "FAIL"}  ${r.name}  (${r.ms.toFixed(1)} ms)`) };
     window.__testResult = result;
     return result;
 }
